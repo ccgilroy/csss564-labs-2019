@@ -1,0 +1,213 @@
+---
+title: "Computational setup for Bayesian statistics"
+author: "Connor Gilroy"
+output: 
+  html_document:
+    toc: true
+  ioslides_presentation: default
+---
+
+# Part 1: Getting R up to speed
+
+## Getting R up to speed {.flexbox .vcenter}
+
+It's more likely that installing fancy Bayesian things will actually work if you take a bit to update your R installation first.
+
+## R
+
+R is the statistical programming language we'll use for the course. (If you're deeply attached to, say, Python, let's talk about it!) 
+
+It sounds like most of you are familiar with R, but if you need a refresher, Kruschke Chapter 3 has one. A sociology colleague of mine, Charles Lanfear, also has some great resources online from his CSSS 508 class: https://clanfear.github.io/CSSS508/
+
+Download R for your OS here: https://cloud.r-project.org/
+
+You'll want at least R version 3.4.0. The latest release is 3.5.3.
+
+## RStudio
+
+If you don't use it already, RStudio is a development environment that will make your R programming life happier and easier. 
+
+Install the desktop version here: https://www.rstudio.com/products/rstudio/download/
+
+When you open RStudio, it'll show you the R version it finds in the console. Make sure it's the right one!
+
+The latest stable release of RStudio is 1.1.463. However, RStudio version 1.2, which is available in a preview version, is supposed to have even better Stan support, so you might consider checking that out: https://www.rstudio.com/products/rstudio/download/preview/
+
+## RMarkdown
+
+This document is an RMarkdown document. It mixes chunks of code and regular text. 
+
+You don't have to use RMarkdown for your problem sets, but we'd recommend it. For printing, you'll probably want to produce pdf or docx output: 
+
+- https://bookdown.org/yihui/rmarkdown/pdf-document.html
+- https://bookdown.org/yihui/rmarkdown/word-document.html
+
+When you inevitably run into $\LaTeX$ trouble while knitting to pdf, I can help :) 
+
+## Useful packages
+
+I use the Tidyverse for my data processing and plotting needs. You don't have to use it yourself, but I'd recommend installing it. 
+
+```{r eval=FALSE}
+install.packages("tidyverse")
+```
+
+# Part 2: Bayesian software
+
+## Bayesian software {.flexbox .vcenter}
+
+We'll use two additional programming languages for specifying Bayesian models and fitting them using MCMC. Each one has a "backend" that *isn't* written in R, and an R package that works as an interface.
+
+## JAGS and rjags
+
+JAGS ("Just Another Gibbs Sampler") is one program for specifying Bayesian models and fitting them using MCMC. Chapter 8 of Kruschke describes JAGS.
+
+First, install the appropriate binary for JAGS from the link here: http://mcmc-jags.sourceforge.net/
+
+Then, install two R packages to interface with JAGS:
+
+```{r eval=FALSE}
+install.packages("rjags")
+install.packages("runjags")
+```
+
+## Did it work?
+
+Load `rjags` and generate some data to test with: 
+
+```{r}
+library(rjags)
+
+# invent some coin flip data
+jags_data <- list(
+  y = c(0, 1, 0, 0, 0, 1, 1, 0, 0)
+)
+jags_data$N <- length(jags_data$y)
+```
+
+## A test model
+
+```{r} 
+jags_model <- jags.model(file = "jags/bernbeta.txt", 
+                         data = jags_data, 
+                         n.chains = 3, 
+                         n.adapt = 500)
+```
+
+## Draw from model
+
+```{r}
+# burn-in
+update(jags_model, n.iter = 500)
+
+# sampling
+coda_samples <- coda.samples(jags_model, variable.names =  c("theta"), 
+                             n.iter = 1000)
+```
+
+**Note:** This probably isn't enough iterations, and we aren't checking to see if the chains are any good!
+
+## Stan and RStan
+
+Stan is another program for Bayesian inference. It's a little newer than JAGS, but it's becoming common. The official Stan website is https://mc-stan.org/
+
+Instructions for installing the R interface (http://mc-stan.org/rstan/) are here: 
+
+https://github.com/stan-dev/rstan/wiki/RStan-Getting-Started
+
+Follow those instructions for the full details. The first thing you should do is this: 
+
+```{r eval=FALSE}
+install.packages("rstan", repos = "https://cloud.r-project.org/", 
+                 dependencies = TRUE)
+```
+
+## C++ toolchain
+
+Stan is written in C++. It'll try to install a C++ toolchain so you can compile Stan programs, but that might not work. Check to see if it did: 
+
+```{r eval=FALSE}
+pkgbuild::has_build_tools(debug = TRUE)
+```
+
+If the check doesn't return `TRUE`, you'll need to follow the instructions linked above to get your C++ toolchain working. This is a different process for Windows, Mac, or Linux, and you may need my help with it.
+
+Afterward, there's a bit of configuration you should do, also in the link above.
+
+## Did it work?
+
+Let's load Stan and find out!
+
+```{r}
+library(rstan)
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = TRUE)
+```
+
+## A test model
+
+We'll fit some fake data to a model called `8schools`: 
+
+```{r}
+schools_dat <- list(J = 8, 
+                    y = c(28,  8, -3,  7, -1,  1, 18, 12),
+                    sigma = c(15, 10, 16, 11,  9, 11, 10, 18))
+```
+
+## Fitting the model
+
+This will take a bit to compile, then start sampling. If you see a bunch of output about chains, that means it worked!
+
+```{r eval=FALSE}
+fit <- stan(file = "stan/8schools.stan", data = schools_dat)
+```
+
+I actually ran into an error myself while updating to rstan 2.18.2! I had to delete everything in my Makevars file and start over to fix it.
+
+# Part 3: Extras
+
+## Extras {.flexbox .vcenter}
+
+You'll need some of these packages later, but you don't have to worry about setting them up now if you don't want to.
+
+## Bayesian workflow packages
+
+Later in the quarter, we'll learn about the entire Bayesian workflow---after you build and fit a model, you'll need to check it and critique it in an iterative fashion.  
+
+Two packages will help with this: 
+
+`bayesplot` (http://mc-stan.org/bayesplot/) makes plots for visually checking model diagnostics, posterior distributions, and fits to data.
+
+`loo` (http://mc-stan.org/loo/) approximates leave-one-out cross-validation, for model comparison and selection. 
+
+```{r eval=FALSE}
+install.packages("bayesplot")
+install.packages("loo")
+```
+
+## R-style modeling
+
+These are convenient shortcuts to common Stan models, using R syntax. I'm more familiar with `rstanarm`, but `brms` is similar and also well-regarded.
+
+As you move into applied social science problems that you want to use Bayesian models, you'll probably want to use these packages. However, I'd encourage you to use `rstan` and your own Stan models at the beginning, because that's a better way to develop an intuition and understanding of what they're actually doing.
+
+```{r eval=FALSE}
+install.packages("rstanarm")
+install.packages("brms")
+```
+
+## Tidybayes
+
+If you're all in on tidy data, `tidybayes` can make dealing with the output from rstan and rjags easier. 
+
+```{r eval=FALSE}
+install.packages("tidybayes")
+```
+
+# Appendix 
+
+## Session Info {.smaller}
+
+```{r}
+sessionInfo()
+```
