@@ -1,7 +1,8 @@
 ---
 title: "Lab materials for CSSS 564"
-subtitle: "Bayesian Statistics for the Social Sciences"
-date: "Spring 2019"
+subtitle: | 
+  | Bayesian Statistics for the Social Sciences
+  | Spring 2019, University of Washington
 output: html_document
 ---
 
