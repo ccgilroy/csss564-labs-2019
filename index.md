@@ -8,4 +8,4 @@ output: html_document
 
 This page hosts the lab materials for CSSS 564 at the University of Washington.
 
-- [01-setup](./01-setup/01-setup.html)
+- [01-setup](./01-setup/01-setup.html) ([slides](./01-setup/01-setup-slides.html)) ([resources](./01-setup/resources.html))
