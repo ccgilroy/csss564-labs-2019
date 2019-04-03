@@ -4,6 +4,7 @@ author: "Connor Gilroy"
 output: 
   html_document:
     toc: true
+    toc_float: true
   ioslides_presentation: default
 ---
 
