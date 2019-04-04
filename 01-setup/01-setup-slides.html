@@ -3111,7 +3111,7 @@ if (document.readyState !== "loading" &&
 
 <slide class="segue dark nobackground level1"><hgroup class = 'auto-fadein'><h2>Part 1: Getting R up to speed</h2></hgroup><article  id="part-1-getting-r-up-to-speed">
 
-</article></slide><slide class=""><hgroup><h2>Getting R up to speed</h2></hgroup><article  id="getting-r-up-to-speed" class="flexbox vcenter">
+</article></slide><slide class=""><hgroup><h2>Getting R up to speed</h2></hgroup><article  class="flexbox vcenter" id="getting-r-up-to-speed">
 
 <p>It’s more likely that installing fancy Bayesian things will actually work if you take a bit to update your R installation first.</p>
 
@@ -3148,6 +3148,14 @@ if (document.readyState !== "loading" &&
 
 <p>When you inevitably run into \(\LaTeX\) trouble while knitting to pdf, I can help :)</p>
 
+</article></slide><slide class=""><hgroup><h2>Rproj</h2></hgroup><article  id="rproj">
+
+<p>A convenient way to bundle R, Rmd, jags, and stan files together is by using RStudio projects (.Rproj files):</p>
+
+<p><a href='https://r4ds.had.co.nz/workflow-projects.html#rstudio-projects' title=''>https://r4ds.had.co.nz/workflow-projects.html#rstudio-projects</a></p>
+
+<p>If you open the 01-setup.Rproj file after extracting your zip file, R will be able to find your data and your JAGS and Stan models using <em>relative</em> file paths. That’s a good thing!</p>
+
 </article></slide><slide class=""><hgroup><h2>Useful packages</h2></hgroup><article  id="useful-packages">
 
 <p>I use the Tidyverse for my data processing and plotting needs. You don’t have to use it yourself, but I’d recommend installing it.</p>
@@ -3156,7 +3164,7 @@ if (document.readyState !== "loading" &&
 
 </article></slide><slide class="segue dark nobackground level1"><hgroup class = 'auto-fadein'><h2>Part 2: Bayesian software</h2></hgroup><article  id="part-2-bayesian-software">
 
-</article></slide><slide class=""><hgroup><h2>Bayesian software</h2></hgroup><article  id="bayesian-software" class="flexbox vcenter">
+</article></slide><slide class=""><hgroup><h2>Bayesian software</h2></hgroup><article  class="flexbox vcenter" id="bayesian-software">
 
 <p>We’ll use two additional programming languages for specifying Bayesian models and fitting them using MCMC. Each one has a &ldquo;backend&rdquo; that <em>isn’t</em> written in R, and an R package that works as an interface.</p>
 
@@ -3260,7 +3268,7 @@ rstan_options(auto_write = TRUE)</pre>
 
 </article></slide><slide class="segue dark nobackground level1"><hgroup class = 'auto-fadein'><h2>Part 3: Extras</h2></hgroup><article  id="part-3-extras">
 
-</article></slide><slide class=""><hgroup><h2>Extras</h2></hgroup><article  id="extras" class="flexbox vcenter">
+</article></slide><slide class=""><hgroup><h2>Extras</h2></hgroup><article  class="flexbox vcenter" id="extras">
 
 <p>You’ll need some of these packages later, but you don’t have to worry about setting them up now if you don’t want to.</p>
 
@@ -3294,7 +3302,7 @@ install.packages(&quot;brms&quot;)</pre>
 
 </article></slide><slide class="segue dark nobackground level1"><hgroup class = 'auto-fadein'><h2>Appendix</h2></hgroup><article  id="appendix">
 
-</article></slide><slide class=""><hgroup><h2>Session Info</h2></hgroup><article  id="session-info" class="smaller">
+</article></slide><slide class=""><hgroup><h2>Session Info</h2></hgroup><article  class="smaller" id="session-info">
 
 <pre class = 'prettyprint lang-r'>sessionInfo()</pre>
 

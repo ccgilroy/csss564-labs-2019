@@ -45,6 +45,14 @@ You don't have to use RMarkdown for your problem sets, but we'd recommend it. Fo
 
 When you inevitably run into $\LaTeX$ trouble while knitting to pdf, I can help :) 
 
+## Rproj
+
+A convenient way to bundle R, Rmd, jags, and stan files together is by using RStudio projects (.Rproj files): 
+
+https://r4ds.had.co.nz/workflow-projects.html#rstudio-projects
+
+If you open the 01-setup.Rproj file after extracting your zip file, R will be able to find your data and your JAGS and Stan models using *relative* file paths. That's a good thing!
+
 ## Useful packages
 
 I use the Tidyverse for my data processing and plotting needs. You don't have to use it yourself, but I'd recommend installing it. 
