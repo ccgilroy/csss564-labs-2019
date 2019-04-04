@@ -8,11 +8,13 @@ output:
 
 # Documentation
 
-## Vignettes
+## Case studies and vignettes
 
 Practical examples are a great place to start when learning Bayesian computational techniques. 
 
 The Stan case studies here are complex but well-documented: https://mc-stan.org/users/documentation/case-studies.html
+
+Michael Betancourt's case studies are also excellent: https://betanalpha.github.io/writing/
 
 The `rstanarm` vignettes are simpler, but give a good lay of the land: http://mc-stan.org/rstanarm/articles/index.html
 
