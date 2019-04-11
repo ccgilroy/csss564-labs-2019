@@ -105,7 +105,7 @@ jags_model <- jags.model(file = "jags/bernbeta.txt",
 
 ## Draw from model
 
-```{r}
+```{r eval=FALSE}
 # burn-in
 update(jags_model, n.iter = 500)
 
@@ -172,6 +172,26 @@ fit <- stan(file = "stan/8schools.stan", data = schools_dat)
 ```
 
 I actually ran into an error myself while updating to rstan 2.18.2! I had to delete everything in my Makevars file and start over to fix it.
+
+## Bernoulli model, Stan version
+
+This is the same model as the JAGS model above, and we can use the same data structure.
+
+NOTE: you can compile the model and sample from it separately. `stan_model` + `sampling` is the same as just calling `stan`.
+
+```{r}
+mod_bern <- stan_model("stan/bernbeta.stan")
+mod_bern
+```
+
+```{r}
+fit_bern <- sampling(mod_bern, data = jags_data)
+```
+
+```{r}
+print(fit_bern)
+stan_plot(fit_bern, show_density = TRUE)
+```
 
 # Part 3: Extras
 
