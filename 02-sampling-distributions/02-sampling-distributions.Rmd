@@ -1,0 +1,184 @@
+---
+title: "Sampling, simulating, and summarizing distributions"
+author: "Connor Gilroy"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r}
+library(tidyverse)
+
+# set the ggplot theme
+theme_set(theme_minimal())
+
+# set a random seed and the number of simulations
+set.seed(123)
+nsims <- 10000
+```
+
+# Sampling and simulating
+
+Why is simulation important? 
+
+- If you have a known distribution (a prior, or a likelihood) you can simulate data from it to understand how it will behave.
+
+- If you don't know a (posterior) distribution, there are ways to approximate it by sampling from it. 
+
+- To check the behavior of your model, you can simulate more data from the (posterior predictive) distribution using sampled parameter values.   
+
+## Discrete distribution: Poisson
+
+The Poisson distribution is useful for modeling count data; it's a discrete distribution that only takes on integer values >= 0.
+
+First, we can use `dpois` to analytically calculate the density for a Poisson distribution with $\lambda = 5$. (We stop at an arbitrary large value of x.)
+
+```{r}
+xs <- 0:15
+densities <- dpois(x = xs, lambda = 5)
+
+df <- data_frame(x = xs, densities = densities) 
+ggplot(df, aes(x = x, y = densities)) + geom_col()
+```
+
+Then, if we draw samples from the same distribution, we should get something close to the theoretical densities. 
+
+```{r}
+poisson_samples <- rpois(n = nsims, lambda = 5)
+
+# first, plot counts
+data_frame(samples = poisson_samples) %>%
+  ggplot(aes(x = samples)) + 
+  geom_bar()
+
+# then, divide counts by number of samples
+data_frame(samples = poisson_samples) %>%
+  count(samples) %>%
+  mutate(frac = n/nsims) %>%
+  ggplot(aes(x = samples, y = frac)) + 
+  geom_col()
+```
+
+## Continuous distribution: Gamma 
+
+This is a continuous probability distribution; can plot using a grid of values
+
+Why'd I pick this shape and rate? It's a recommended prior choice for something in Stan. 
+
+https://github.com/stan-dev/stan/wiki/Prior-Choice-Recommendations#prior-for-degrees-of-freedom-in-students-t-distribution
+
+```{r}
+# analytic densities
+gamma_densities <- dgamma(x = 0:600, shape = 2, rate = .01)
+
+data_frame(x = 0:600, densities = gamma_densities) %>%
+  ggplot(aes(x = x, y = densities)) +
+  geom_point()
+
+
+```
+
+
+```{r}
+# densities from samples
+gamma_samples <- rgamma(n = nsims, shape = 2, rate = .01)
+
+data_frame(samples = gamma_samples) %>%
+  ggplot(aes(x = samples)) + 
+  geom_density() + 
+  xlim(0, 600)
+
+
+
+```
+
+# Summarizing
+
+Visually inspecting distributions is always a good idea! But quantitative summaries are also useful for describing distributions.
+
+## Point estimates
+
+Th
+
+(highest probability density value)
+
+For some distributions (e.g. the normal distribution), these values are the same ... but that's not always true.
+
+```{r}
+mean(poisson_samples)
+
+median(poisson_samples)
+
+# mode (no R function)
+data_frame(samples = poisson_samples) %>%
+  count(samples) %>%
+  filter(n == max(n))
+```
+
+
+Mean
+
+Median
+
+Mode
+
+## Intervals
+
+Percentiles
+
+HDIs
+
+```{r}
+# percentiles
+summary(poisson_samples)
+quantile(poisson_samples, probs = c(.25, .75))
+
+# HDI
+
+
+```
+
+## Another example: the normal distribution
+
+This way of approximating probability masses and densities is called *Monte Carlo simulation*. For continuous distributions, we're approximating an integral. You can do this for arbitrary parts of the distribution: 
+
+```{r}
+normal_samples <- rnorm(nsims, mean = 0, sd = 1)
+
+# how much probability is between -1 and +1 sd in a normal distribution?
+sum(normal_samples >= -1 & normal_samples <= 1) / nsims
+
+# how accurate is this? 
+pnorm(1) - pnorm(-1)
+
+# what about 0 and .5 sd?
+sum(normal_samples >= 0 & normal_samples <= .5) / nsims
+
+pnorm(.5) - pnorm(0)
+```
+
+Try changing `nsims` and see how the approximation improves.
+
+# Priors, likelihoods, posteriors (grid approximation)
+
+Back to our friend the Bernoulli distribution.
+
+One possibility is a *uniform* prior
+
+use `dbinom` with N = 1
+
+## bernoulli, binomial, and beta [move this below!]
+
+- you can make a binomial distribution where the mean, median, and mode are really different. McElreath does in Chapter 3 of his book.
+
+beta distribution
+
+```{r}
+rbeta()
+```
+
+```{r}
+dbinom(x = 3, size = 3, prob = p_grid)
+
+```
