@@ -1,21 +1,30 @@
 ---
 title: "Sampling, simulating, and summarizing distributions"
+subtitle: "Lab 2, CSSS 564"
 author: "Connor Gilroy"
 output: 
   html_document:
     toc: true
     toc_float: true
+    fig_width: 4
+    fig_height: 3
 ---
 
-```{r}
+```{r setup, message=FALSE}
 library(tidyverse)
 
 # set the ggplot theme
 theme_set(theme_minimal())
 
+# center-align figures
+knitr::opts_chunk$set(fig.align = "center")
+
 # set a random seed and the number of simulations
 set.seed(123)
 nsims <- 10000
+
+# install this package if you don't have it: 
+# install.packages("LaplacesDemon")
 ```
 
 # Sampling and simulating
@@ -24,7 +33,7 @@ Why is simulation important?
 
 - If you have a known distribution (a prior, or a likelihood) you can simulate data from it to understand how it will behave.
 
-- If you don't know a (posterior) distribution, there are ways to approximate it by sampling from it. 
+- If you don't know a (posterior) distribution, you can still approximate it by sampling from it. 
 
 - To check the behavior of your model, you can simulate more data from the (posterior predictive) distribution using sampled parameter values.   
 
@@ -53,6 +62,7 @@ data_frame(samples = poisson_samples) %>%
   geom_bar()
 
 # then, divide counts by number of samples
+# to get probability masses
 data_frame(samples = poisson_samples) %>%
   count(samples) %>%
   mutate(frac = n/nsims) %>%
@@ -62,86 +72,145 @@ data_frame(samples = poisson_samples) %>%
 
 ## Continuous distribution: Gamma 
 
-This is a continuous probability distribution; can plot using a grid of values
+The gamma distribution is a continuous probability distribution. We can plot an approximation of the shape from the true densities using a *grid* of values. 
 
-Why'd I pick this shape and rate? It's a recommended prior choice for something in Stan. 
+We'll use $Gamma(2, 0.1)$---a shape parameter of 2, and a rate (or inverse scale) parameter of 0.1. Try changing these values and see how the distribution changes.
 
-https://github.com/stan-dev/stan/wiki/Prior-Choice-Recommendations#prior-for-degrees-of-freedom-in-students-t-distribution
+(Why'd I pick this shape and rate? It's a [recommended prior choice](https://github.com/stan-dev/stan/wiki/Prior-Choice-Recommendations#prior-for-degrees-of-freedom-in-students-t-distribution) for something in Stan.) 
 
 ```{r}
 # analytic densities
-gamma_densities <- dgamma(x = 0:600, shape = 2, rate = .01)
+xs <- seq(0, 120, by = 2)
 
-data_frame(x = 0:600, densities = gamma_densities) %>%
+gamma_densities <- dgamma(x = xs, shape = 2, rate = 0.1)
+
+data_frame(x = xs, densities = gamma_densities) %>%
   ggplot(aes(x = x, y = densities)) +
-  geom_point()
-
-
+  geom_point(size = .5) + 
+  geom_line()
 ```
 
+Since this is a continuous distribution, we'll use a kernel density (rather than a histogram) to plot the samples: 
 
 ```{r}
 # densities from samples
-gamma_samples <- rgamma(n = nsims, shape = 2, rate = .01)
+gamma_samples <- rgamma(n = nsims, shape = 2, rate = 0.1)
 
 data_frame(samples = gamma_samples) %>%
   ggplot(aes(x = samples)) + 
-  geom_density() + 
-  xlim(0, 600)
-
-
-
+  geom_density()
 ```
+
+If you know the theoretical distribution, another way to compare the samples to it is with a quantile-quantile plot: 
+
+```{r}
+data_frame(samples = gamma_samples) %>%
+  ggplot(aes(sample = samples)) + 
+  geom_qq(distribution = qgamma, 
+          dparams = list(shape = 2, rate = 0.1)) + 
+  geom_qq_line(distribution = qgamma,
+               dparams = list(shape = 2, rate = 0.1)) 
+```
+
+Key thing to notice here: the approximation is less good in the long tail.
 
 # Summarizing
 
 Visually inspecting distributions is always a good idea! But quantitative summaries are also useful for describing distributions.
 
-## Point estimates
+## Single values
 
-Th
+There are multiple ways to summarize the central tendency of a distribution with a single value, including the mean, median, and mode (the value with the highest probability density). For some distributions (e.g. the normal distribution), these values are the same ... but that's not always true.
 
-(highest probability density value)
+If you're giving a point estimate for a parameter, one of these values would be what you'd report.
 
-For some distributions (e.g. the normal distribution), these values are the same ... but that's not always true.
+We can calculate those values from the Poisson samples: 
 
 ```{r}
 mean(poisson_samples)
 
 median(poisson_samples)
 
-# mode (no R function)
+# mode (there's no built-in R function)
 data_frame(samples = poisson_samples) %>%
   count(samples) %>%
   filter(n == max(n))
+
+# Or, from the LaplacesDemon package:
+LaplacesDemon::Mode(poisson_samples)
+
 ```
 
+And from the gamma samples: 
 
-Mean
-
-Median
-
-Mode
+```{r}
+mean(gamma_samples)
+median(gamma_samples)
+LaplacesDemon::Mode(gamma_samples)
+```
 
 ## Intervals
 
-Percentiles
+We can also use intervals to summarize distributions. If these intervals are for estimates of a parameter in a posterior distribution, we call them *credible intervals*. There are two common intervals used to summarize distributions: percentiles and HDIs (highest density intervals). 
 
-HDIs
+For the Poisson distribution, the 50% credible intervals: 
 
 ```{r}
 # percentiles
 summary(poisson_samples)
 quantile(poisson_samples, probs = c(.25, .75))
 
-# HDI
-
+# HDIs
+# the coda package can calculate HDIs
+# but only if we pretend our samples came from MCMC
+coda::HPDinterval(coda::as.mcmc(poisson_samples), 
+                  prob = .5)
 
 ```
 
+For the gamma distribution: 
+
+```{r}
+quantile(gamma_samples, probs = c(.25, .75))
+
+coda::HPDinterval(coda::as.mcmc(gamma_samples), 
+                  prob = .5)
+
+```
+
+Note that these are fairly different!
+
+We can plot all of these possibilities: 
+
+```{r}
+df <- data_frame(samples = gamma_samples)
+p <- ggplot(df, aes(x = samples)) + geom_density()
+ 
+p + 
+  geom_vline(xintercept = mean(gamma_samples), color = "blue") +
+  labs(title = "Mean")
+  
+p +   
+  geom_vline(xintercept = median(gamma_samples), color = "purple") + 
+  geom_vline(xintercept = quantile(gamma_samples, probs = c(.25, .75)), 
+             color = "purple", linetype = "dashed") +
+  labs(title = "Median and 25%-75% percentile")
+
+hdi <- coda::HPDinterval(coda::as.mcmc(gamma_samples), prob = .5)
+
+p + 
+  geom_vline(xintercept = LaplacesDemon::Mode(gamma_samples), color = "red") +
+  geom_vline(xintercept = c(hdi[1], hdi[2]),  
+             color = "red", linetype = "dashed") +
+  labs(title = "Mode and 50% HDI")
+
+```
+
+What should you use? It depends! The mean is commonly used in Bayesian statistics, though `rstan` and `bayesplot` use the median and percentiles by default. The mode is less common, but it has a nice correspondence to the maximum likelihood estimate. In a Bayesian context, this is called *maximum a posteriori* estimation.
+
 ## Another example: the normal distribution
 
-This way of approximating probability masses and densities is called *Monte Carlo simulation*. For continuous distributions, we're approximating an integral. You can do this for arbitrary parts of the distribution: 
+Approximating probability masses and densities through sampling is called *Monte Carlo simulation*. For continuous distributions, we're approximating an integral. You can do this for arbitrary parts of the distribution: 
 
 ```{r}
 normal_samples <- rnorm(nsims, mean = 0, sd = 1)
@@ -160,25 +229,21 @@ pnorm(.5) - pnorm(0)
 
 Try changing `nsims` and see how the approximation improves.
 
-# Priors, likelihoods, posteriors (grid approximation)
+# Practice
 
-Back to our friend the Bernoulli distribution.
-
-One possibility is a *uniform* prior
-
-use `dbinom` with N = 1
-
-## bernoulli, binomial, and beta [move this below!]
-
-- you can make a binomial distribution where the mean, median, and mode are really different. McElreath does in Chapter 3 of his book.
-
-beta distribution
+- Discrete distribution: binomial. Simulate from the binomial distribution with some N and $\pi$ and plot/summarize. Compare to the analytic density. 
+- Continuous distribution: beta. Look up the beta distribution. Simulate from it with a couple different values of the two shape parameters, then plot/summarize. Compare to the analytic density. 
 
 ```{r}
-rbeta()
+
 ```
 
-```{r}
-dbinom(x = 3, size = 3, prob = p_grid)
+Notice that the beta distribution is continuous and bounded between 0 and 1, which makes it convenient for representing probabilities. For next week, think about what we might be able to do if we made a grid of *probabilities* rather than Xs for the binomial distribution.
 
+# Appendix
+
+## Session Info
+
+```{r}
+sessionInfo()
 ```
