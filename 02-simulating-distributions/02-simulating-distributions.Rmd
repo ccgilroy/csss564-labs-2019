@@ -1,5 +1,5 @@
 ---
-title: "Sampling, simulating, and summarizing distributions"
+title: "Simulating and summarizing distributions"
 subtitle: "Lab 2, CSSS 564"
 author: "Connor Gilroy"
 output: 
@@ -27,7 +27,7 @@ nsims <- 10000
 # install.packages("LaplacesDemon")
 ```
 
-# Sampling and simulating
+# Simulating by sampling
 
 Why is simulation important? 
 
@@ -231,8 +231,8 @@ Try changing `nsims` and see how the approximation improves.
 
 # Practice
 
-- Discrete distribution: binomial. Simulate from the binomial distribution with some N and $\pi$ and plot/summarize. Compare to the analytic density. 
-- Continuous distribution: beta. Look up the beta distribution. Simulate from it with a couple different values of the two shape parameters, then plot/summarize. Compare to the analytic density. 
+- **Discrete distribution: binomial.** Simulate from the binomial distribution with some N and $\pi$ and plot/summarize. Compare to the analytic density. 
+- **Continuous distribution: beta.** Look up the beta distribution. Simulate from it with a couple different values of the two shape parameters, then plot/summarize. Compare to the analytic density. 
 
 ```{r}
 
