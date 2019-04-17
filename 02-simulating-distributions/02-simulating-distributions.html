@@ -1685,15 +1685,9 @@ df &lt;-
 
 # calculate entropy
 h_normal &lt;- 0.5 * log(2 * pi * exp(1) * 1^2)
-
-# numeric approximation
-xs &lt;- seq(-10, 10, by = 0.001)
-p &lt;- dnorm(xs, mean = 0, sd = 1)
-- sum(p * log(p)) / sum(p) # if you standardize, it works...?</code></pre>
+h_normal</code></pre>
 <pre><code>## [1] 1.418939</code></pre>
-<pre class="r"><code># how to actually discretize?
-
-# plot average surprisal 
+<pre class="r"><code># plot average surprisal 
 ggplot(df, aes(x = n, y = cumulative_mean)) + 
   geom_line() + 
   labs(y = &quot;Surprisal (cumulative average)&quot;) + 
