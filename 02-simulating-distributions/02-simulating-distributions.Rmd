@@ -208,7 +208,9 @@ p +
 
 What should you use? It depends! The mean is commonly used in Bayesian statistics, though `rstan` and `bayesplot` use the median and percentiles by default. The mode is less common, but it has a nice correspondence to the maximum likelihood estimate. In a Bayesian context, this is called *maximum a posteriori* estimation.
 
-## Another example: the normal distribution
+# The normal distribution
+
+## Monte Carlo simulation
 
 Approximating probability masses and densities through sampling is called *Monte Carlo simulation*. For continuous distributions, we're approximating an integral. You can do this for arbitrary parts of the distribution: 
 
@@ -228,6 +230,37 @@ pnorm(.5) - pnorm(0)
 ```
 
 Try changing `nsims` and see how the approximation improves.
+
+## Sampling and information
+
+Information content (also called *surprisal*) is a way of characterizing the amount of information gained from sampling. It's related to probability: $-log(p)$. $p$ comes from the distribution you choose to model the sample, so how informative or surprising you think each observation is depends on what model you choose for it.
+
+The expected information content of a sample is the *entropy*, which is $- \sum p_i log(p_i)$ for a discrete variable. For continuous distributions, there are often analytic solutions for entropy: https://en.wikipedia.org/wiki/Differential_entropy#Differential_entropies_for_various_distributions
+
+```{r}
+# calculate surprisal for our normal samples
+df <- 
+  data_frame(samples = normal_samples) %>%
+  rowid_to_column(var = "n") %>%               # index for each observation
+  mutate(p = dnorm(samples, mean = 0, sd = 1), # probability of each observation
+         surprisal = -log(p),                  # information content of each obs
+         cumulative_sum = cumsum(surprisal),   # sample surprisal up to n
+         cumulative_mean = cummean(surprisal)) # average sample surprisal to n
+  
+
+# calculate entropy
+h_normal <- 0.5 * log(2 * pi * exp(1) * 1^2)
+h_normal
+
+# plot average surprisal 
+ggplot(df, aes(x = n, y = cumulative_mean)) + 
+  geom_line() + 
+  labs(y = "Surprisal (cumulative average)") + 
+  geom_hline(yintercept = h_normal, linetype = "dashed", color = "blue")
+
+```
+
+If you choose the wrong parameters or wrong model, the average sample surprisal will converge to something higher than the actual entropy. 
 
 # Practice
 
