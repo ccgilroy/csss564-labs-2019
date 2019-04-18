@@ -249,14 +249,14 @@ df <-
   
 
 # calculate entropy
-h_normal <- 0.5 * log(2 * pi * exp(1) * 1^2)
-h_normal
+ent_normal <- 0.5 * log(2 * pi * exp(1) * 1^2)
+ent_normal
 
 # plot average surprisal 
 ggplot(df, aes(x = n, y = cumulative_mean)) + 
   geom_line() + 
   labs(y = "Surprisal (cumulative average)") + 
-  geom_hline(yintercept = h_normal, linetype = "dashed", color = "blue")
+  geom_hline(yintercept = ent_normal, linetype = "dashed", color = "blue")
 
 ```
 
