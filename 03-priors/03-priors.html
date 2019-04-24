@@ -1479,15 +1479,24 @@ div.tocify {
 </div>
 
 
+<div id="goals" class="section level1">
+<h1>Goals</h1>
+<ul>
+<li>understand the relationship between priors, likelihoods, and posteriors</li>
+<li>approximate a simple posterior using grid approximation</li>
+<li>analytically calculate that posterior using conjugacy</li>
+</ul>
+<p>If you’ve opened the accompanying R file, please close it now :)</p>
+</div>
 <div id="example-coin-flips" class="section level1">
 <h1>Example: coin flips</h1>
 <p>Our main example in this lab will be a collection of coin flips, modeled using the binomial distribution:</p>
-<p><span class="math display">\[y \sim \text{Binomial}(N, \pi)\]</span></p>
-<p>Y is the number of heads, N is the number of flips, and <span class="math inline">\(\pi\)</span> is the probability of heads. We’d like to estimate <span class="math inline">\(\pi\)</span>. Kruschke Chapter 6 is a good reference for the math here (though his example uses the Bernoulli distribution).</p>
+<p><span class="math display">\[y \sim \text{Binomial}(N, \theta)\]</span></p>
+<p>y is the number of heads, N is the number of flips, and <span class="math inline">\(\theta\)</span> is the probability of heads. We’d like to estimate <span class="math inline">\(\theta\)</span>. Kruschke Chapter 6 is a good reference for the math here (though his example uses the Bernoulli distribution).</p>
 </div>
 <div id="prior-beta-distribution" class="section level1">
 <h1>Prior: beta distribution</h1>
-<p>A good prior distribution for <span class="math inline">\(\pi\)</span> in the binomial distribution is a beta distribution. One reason is that the beta distribution is continuous bounded between 0 and 1, like <span class="math inline">\(\pi\)</span> should be. There’s another reason, which we’ll introduce below.</p>
+<p>A good prior distribution for <span class="math inline">\(\theta\)</span> in the binomial distribution is a beta distribution. One reason is that the beta distribution is continuous bounded between 0 and 1, like <span class="math inline">\(\theta\)</span> should be. There’s another reason, which we’ll introduce below.</p>
 <pre class="r"><code># hyperparameters
 a_prior &lt;- 1
 b_prior &lt;- 1
@@ -1610,7 +1619,7 @@ fit_binomial &lt;- sampling(m_binomial, data = d)</code></pre>
 </div>
 <div id="appendix" class="section level1">
 <h1>Appendix</h1>
-<p>The complete code for this lab is contained in 03-priors.R. Try to do the activities first, before you look at it!</p>
+<p>The complete code for this lab is contained in <a href="https://github.com/ccgilroy/csss564-labs-2019/blob/master/03-priors/03-priors.R"><code>03-priors.R</code></a>. Try to do the activities first before you look at it!</p>
 <pre class="r"><code>sessionInfo()</code></pre>
 <pre><code>## R version 3.5.3 (2019-03-11)
 ## Platform: x86_64-apple-darwin15.6.0 (64-bit)

@@ -1,5 +1,6 @@
-# this file contains the complete code for 
-# we'll work through the code together
+# this file contains the complete code for lab 3
+# we'll work through the code together, 
+# so you don't need to look at this file until after the lab
 
 # prior and likelihood ----
 # hyperparameters

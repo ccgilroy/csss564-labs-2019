@@ -16,17 +16,25 @@ knitr::opts_chunk$set(fig.align = "center")
 
 ```
 
+# Goals
+
+- understand the relationship between priors, likelihoods, and posteriors
+- approximate a simple posterior using grid approximation
+- analytically calculate that posterior using conjugacy
+
+If you've opened the accompanying R file, please close it now :) 
+
 # Example: coin flips
 
 Our main example in this lab will be a collection of coin flips, modeled using the binomial distribution: 
 
-$$y \sim \text{Binomial}(N, \pi)$$
+$$y \sim \text{Binomial}(N, \theta)$$
 
-Y is the number of heads, N is the number of flips, and $\pi$ is the probability of heads. We'd like to estimate $\pi$. Kruschke Chapter 6 is a good reference for the math here (though his example uses the Bernoulli distribution).
+y is the number of heads, N is the number of flips, and $\theta$ is the probability of heads. We'd like to estimate $\theta$. Kruschke Chapter 6 is a good reference for the math here (though his example uses the Bernoulli distribution).
 
 # Prior: beta distribution 
 
-A good prior distribution for $\pi$ in the binomial distribution is a beta distribution. One reason is that the beta distribution is continuous bounded between 0 and 1, like $\pi$ should be. There's another reason, which we'll introduce below.
+A good prior distribution for $\theta$ in the binomial distribution is a beta distribution. One reason is that the beta distribution is continuous bounded between 0 and 1, like $\theta$ should be. There's another reason, which we'll introduce below.
 
 ```{r}
 # hyperparameters
@@ -238,7 +246,7 @@ See this page for different conjugate priors for the normal distribution, depend
 
 # Appendix
 
-The complete code for this lab is contained in 03-priors.R. Try to do the activities first, before you look at it!
+The complete code for this lab is contained in [`03-priors.R`](https://github.com/ccgilroy/csss564-labs-2019/blob/master/03-priors/03-priors.R). Try to do the activities first before you look at it!
 
 ```{r}
 sessionInfo()
