@@ -22,3 +22,7 @@ To work through the labs, you should download the lab materials from Canvas or f
 ## Lab 2: Simulation
 
 - [Lab page](./02-simulating-distributions/02-simulating-distributions.html)
+
+## Lab 3: Priors
+
+- [Lab page](.03-priors/03-priors.html)
