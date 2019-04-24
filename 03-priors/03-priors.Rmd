@@ -1,0 +1,245 @@
+---
+title: "Priors and conjugacy"
+subtitle: "Lab 3, CSSS 564"
+author: "Connor Gilroy"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    fig_width: 4
+    fig_height: 3
+---
+
+```{r setup, message=FALSE, echo=FALSE}
+# center-align figures
+knitr::opts_chunk$set(fig.align = "center")
+
+```
+
+# Example: coin flips
+
+Our main example in this lab will be a collection of coin flips, modeled using the binomial distribution: 
+
+$$y \sim \text{Binomial}(N, \pi)$$
+
+Y is the number of heads, N is the number of flips, and $\pi$ is the probability of heads. We'd like to estimate $\pi$. Kruschke Chapter 6 is a good reference for the math here (though his example uses the Bernoulli distribution).
+
+# Prior: beta distribution 
+
+A good prior distribution for $\pi$ in the binomial distribution is a beta distribution. One reason is that the beta distribution is continuous bounded between 0 and 1, like $\pi$ should be. There's another reason, which we'll introduce below.
+
+```{r}
+# hyperparameters
+a_prior <- 1
+b_prior <- 1
+
+# plot prior from dbeta
+
+```
+
+# Likelihood: binomial distribution
+
+Let's say we flip the coin 10 times and get 5 heads: 
+
+```{r}
+# data
+trials <- 10
+successes <- 5
+
+# plot likelihood from dbinom
+
+```
+
+# Posterior: ???
+
+## Grid approximation
+
+For simple problems, one way to get to a posterior is to approximate the shape of it with a *grid*. 
+
+```{r}
+# grid approximation ----
+
+# set up a probability grid
+
+# generate prior values at points on the grid
+
+# generate likelihood values at points on the grid
+
+# multiple the likelihood by the prior at each point on the grid
+
+# standardize the posterior to sum to 1
+
+# plot the standardized posterior
+
+```
+
+You can sample from the grid (with replacement!) using the posterior probabilities to compute summary quantities. 
+
+```{r}
+# sample from posterior
+set.seed(20190425)
+nsims <- 1e4
+
+```
+
+**Stop!** Don't look below until we've done the grid approximation.
+
+<br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br>
+<br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## Analytic solution
+
+The problem above turns out to be something we can solve with math. We can use math because the beta distribution is the *conjugate* prior for the binomial likelihood.
+
+What does that mean? A prior and likelihood are conjugate distributions if the posterior distribution comes from the same family as the prior. 
+
+In this case, the posterior distribution is also a beta distribution! 
+
+Remember the parameter values for our prior:
+
+```{r}
+# analytic solution ----
+a_prior <- 1
+b_prior <- 1
+
+```
+
+We can think of the prior in terms of previously observed data: 1 head, 1 tail.
+
+When we see new data, we *update* those values accordingly. These were our new data: 
+```{r}
+trials <- 10
+successes <- 5
+```
+
+We add the number of successes to `a`, and the number of failures to `b`: 
+
+```{r}
+failures <- trials - successes
+
+a_posterior <- a_prior + successes 
+b_posterior <- b_prior + failures
+
+```
+
+Then, we can plot the new beta distribution: 
+
+```{r}
+# plot the analytic posterior distribution
+
+```
+
+## Updating: posterior as prior
+
+What happens if we do a second set of coin flips? We can take our previous data into account by starting with our old posterior as a new prior.
+
+```{r}
+# make some new data
+
+# update the parameters
+
+# plot the new posterior
+
+```
+
+## MCMC (optional)
+
+The `jags/` and `stan/` folders in this project contain models you've seen before. These are models for a *Bernoulli* distribution: repeated observations of a single coin flip, not a collection of coin flips.
+
+What we want to do is make changes to those models so we can use them on the *binomial* data introduced above (N = 10, y = 5). Ultimately, the following code should work: 
+
+```{r eval=FALSE}
+library(rstan)
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = TRUE)
+
+m_binomial <- stan_model("stan/binomial.stan")
+
+d <- list(
+  N = 10, 
+  y = 5, 
+  a = 1, 
+  b = 1
+)
+
+fit_binomial <- sampling(m_binomial, data = d)
+
+```
+
+## Weakly informative priors (optional)
+
+Think back to Problem 4 of Assignment 1: Flat priors aren't really uninformative. Can we use the logit transformation to assign a *weakly informative* prior somehow? How might we go about doing that?
+
+Here's a hint: what's different about the `binomial` and `binomial_logit` functions in Stan?
+
+```{r}
+rstan::lookup("^binomial")
+
+```
+
+# On your own: the normal distribution
+
+If they're so convenient, why don't we use analytic solutions and conjugate priors all the time? To answer that question, think about the normal distribution. 
+
+Remember, the normal distribution can be parameterized in 3 ways: 
+
+With the standard deviation (aka scale): 
+
+$$y \sim \text{Normal}(\mu, \sigma)$$
+
+With the variance: 
+
+$$y \sim \text{Normal}(\mu, \sigma^2)$$
+
+With the precision, $\tau = \frac{1}{\sigma^2}$: 
+
+$$y \sim \text{Normal}(\mu, \tau)$$
+
+The key difference from the binomial or Bernoulli distribution is that the normal distribution has 2 parameters we might want to estimate.  
+
+If you assume the scale/variance/precision is known, then the only parameter you have to worry about is the mean. In that case, the conjugate prior is also a normal distribution! You can think about the posterior mean as a weighted average of the mean of the data and the prior mean. (Weighted how? Using the precisions of the prior and the sample!)
+
+See this page for different conjugate priors for the normal distribution, depending on which parameters you hold fixed or let vary: https://en.wikipedia.org/wiki/Conjugate_prior#When_likelihood_function_is_a_continuous_distribution
+
+# Appendix
+
+The complete code for this lab is contained in 03-priors.R. Try to do the activities first, before you look at it!
+
+```{r}
+sessionInfo()
+```

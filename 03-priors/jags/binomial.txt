@@ -1,0 +1,13 @@
+# We'll adapt the bernoulli model we saw before into a binomial model
+# - How would you change this model to use a binomial likelihood instead?
+# - How would you make it possible to vary the parameters of the prior?
+model {
+  # Likelihood:
+  for (i in 1:N) {
+    y[i] ~ dbern(theta)
+  }
+  # Prior distribution:
+  theta ~ dbeta(a, b)
+  a <- 1
+  b <- 1
+}
