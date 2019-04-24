@@ -73,7 +73,7 @@ For simple problems, one way to get to a posterior is to approximate the shape o
 
 # generate likelihood values at points on the grid
 
-# multiple the likelihood by the prior at each point on the grid
+# multiply the likelihood by the prior at each point on the grid
 
 # standardize the posterior to sum to 1
 
