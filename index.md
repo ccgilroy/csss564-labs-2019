@@ -25,4 +25,4 @@ To work through the labs, you should download the lab materials from Canvas or f
 
 ## Lab 3: Priors
 
-- [Lab page](.03-priors/03-priors.html)
+- [Lab page](./03-priors/03-priors.html)
