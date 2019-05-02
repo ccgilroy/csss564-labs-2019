@@ -26,3 +26,7 @@ To work through the labs, you should download the lab materials from Canvas or f
 ## Lab 3: Priors
 
 - [Lab page](./03-priors/03-priors.html)
+
+## Lab 4: MCMC
+
+- [Lab page](./04-mcmc/04-mcmc.html)
