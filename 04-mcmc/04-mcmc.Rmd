@@ -1,0 +1,318 @@
+---
+title: "Sampling the posterior through Markov chain Monte Carlo (MCMC)"
+subtitle: "Lab 4, CSSS 564"
+author: "Connor Gilroy"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    fig_width: 5
+    fig_height: 3
+---
+
+```{r}
+knitr::opts_chunk$set(fig.align = "center")
+```
+
+# Goals
+
+- Build intuition for what MCMC is
+- Understand computation for a simple MCMC algorithm (Metropolis)
+- Be aware of the variety of MCMC algorithms that are used in practice
+  - Metropolis-Hastings -> Gibbs (JAGS)
+  - HMC -> NUTS (Stan)
+- Know what properties a "good" sampler and "good" markov chains have
+  - representativeness / convergence
+  - accuracy / stability
+  - efficiency
+
+Relevant readings: 
+
+- Kruschke Chapter 7 (MCMC in general)
+- Krusckhe Chapter 14, Section 1 (HMC)
+
+# The Metropolis algorithm
+
+The Metropolis algorithm is the simplest way to build a Markov chain of samples. 
+
+What it does: 
+
+- start somewhere
+- propose a move somewhere else
+  - if the probability density is higher there, definitely go there
+  - if it's smaller, maybe go there anyway
+- repeat until you've approximated the joint posterior
+
+The key to why this works is how you decide to accept/reject the proposed jump:  
+
+p_move = P(proposed) / P(current)
+
+p_move is just 1 if P(proposed) > P(current)
+
+## Discrete islands
+
+(Adapted from Kruschke 7.2 and McElreath 8.1.)
+
+Imagine a politician visiting a chain of islands. The politician wants to spend time on each island relative to its population. They can only move to adjacent islands. They don't know the actual population of any island, but they can figure out the population of an adjacent island relative to their current one when they propose a move.
+
+To keep it simple, let's assume the 7 islands have relative populations of 1 through 7.
+
+```{r}
+set.seed(123)
+
+relative_pops <- 1:7 # relative population of each island
+
+n_days <- 1e4
+positions <- rep(NA, n_days) # we'll fill this up as we go
+current <- 4 # pick an island to start on
+
+for (i in 1:n_days) {
+  # where are they now?
+  positions[i] <- current
+  
+  # where do they propose to go?
+  # they can go left (-1) or right (+1)
+  direction <- sample(c(-1, 1), size = 1)
+  proposal <- current + direction
+  
+  # the probability of moving is the ratio of island populations
+  prob_move <- relative_pops[proposal] / relative_pops[current]
+  # NOTE: in our example, this is the same as this: 
+  # prob_move <- proposal / current
+  
+  # if they propose walking off the island chain, don't do that
+  if (proposal < 1 | proposal > 7) prob_move <- 0
+  
+  # okay, do they move to the next island or not?
+  current <- ifelse(runif(1) < prob_move, proposal, current)
+}
+```
+
+Now, let's look at the politician's trip: 
+
+```{r message=FALSE}
+library(tidyverse)
+
+# make a data frame
+df <- 
+  data_frame(
+    n = 1:n_days,
+    position = positions
+  )
+
+# let's look at the first part of their trip
+df_small <- head(df, 100)
+ggplot(df_small, aes(x = n, y = position)) + geom_point() + geom_line()
+
+# and a summary of where they were
+ggplot(df, aes(x = position)) + geom_bar()
+
+# how does that compare to what we'd expect? 
+# try increasing n_days in the algorithm to do better!
+df %>% 
+  count(position) %>% 
+  mutate(frac = nn/sum(nn), 
+         expected = position/sum(position)) 
+```
+
+## A continuous parameter: Poisson $\lambda$
+
+What if there are more possibilities for making a proposal than just left/right?
+
+We can make a symmetric proposal using a normal distribution with some appropriate standard deviation. 
+
+- We don't want to jump around too far, because we'll reject too many proposals 
+- We don't want to move around too slowly, because we'll take too long to move through 
+
+Here's a tweet-sized example from a Poisson distribution: 
+
+```{r}
+# https://twitter.com/rlmcelreath/status/732947118785191936
+set.seed(123)
+
+N <- 20
+lambda <- 2
+y <- sum(rpois(N, lambda = lambda))
+
+n_chain <- 1e4
+p <- rep(1, n_chain) # we'll fill this up as we go
+
+sd_proposal <- 1/9
+
+for(i in 2:n_chain) {
+  r <- p[i-1] # current location
+  q = exp(log(r) + rnorm(1, mean = 0, sd = sd_proposal)) # proposed new location
+  p[i] <- ifelse(runif(1) < q^y * r^(-y) * exp(-N * (q - r)), 
+                 q, 
+                 r) # accept or reject? 
+}
+```
+
+
+What's this mess: `q^y * r^(-y) * exp(-N * (q - r))`? That's the ratio of two Poisson probabilities. 
+
+Let's look at p: 
+
+```{r}
+plot(p, type = "l") # this is a "trace plot"
+
+summary(p[-c(1:1000)]) # drop the "burn-in" period
+```
+
+## Two continuous parameters
+
+To visualize how Metropolis works for *two* continuous parameters, go to this demo here: https://chi-feng.github.io/mcmc-demo/app.html
+
+Choose "RandomWalkMH" as the algorithm and "standard" as the target distribution.
+
+# Gibbs sampling
+
+Can we make smarter proposals than random ones? If we can, we'll sample more efficiently. Gibbs sampling exploits conjugacy to sample more efficiently than the Metropolis algorithm. 
+
+The idea is that, even if the joint posterior is impossible to calculate analytically, we might be able to calculate the *conditional* posterior for one parameter if we hold all the others constant. Because proposals are drawn from this conditional posterior, they can always be accepted. Gibbs sampling cycles through all the parameters, one at a time. 
+
+Note that, despite the name ("Just another Gibbs sampler"), a Gibbs sampler is only *one of* the samplers that JAGS uses.  
+
+Here's an implementation of a Gibbs sampler in R for a normal distribution, from https://stats.stackexchange.com/questions/266665/gibbs-sampler-examples-in-r. 
+
+It samples using the conjugate distributions for a normal with a known precision and then for a normal with a known mean: https://en.wikipedia.org/wiki/Conjugate_prior#When_likelihood_function_is_a_continuous_distribution
+
+```{r}
+# summary statistics of sample
+n    <- 30
+ybar <- 15
+s2   <- 3
+
+# sample from the joint posterior (mu, tau | data)
+mu       <- rep(NA, 11000)
+tau      <- rep(NA, 11000)
+T_burnin <- 1000    # burnin
+tau[1]   <- 1  # initialisation
+for(i in 2:11000) {   
+    mu[i]  <- rnorm(n = 1, mean = ybar, sd = sqrt(1 / (n * tau[i - 1])))    
+    tau[i] <- rgamma(n = 1, shape = n / 2, scale = 2 / ((n - 1) * s2 + n * (mu[i] - ybar)^2))
+}
+mu  <- mu[-(1:T_burnin)]   # remove burnin
+tau <- tau[-(1:T_burnin)] # remove burnin
+```
+
+```{r}
+hist(mu)
+hist(tau)
+```
+
+Here's code that implements a Gibbs sampler in R for simple linear regression: 
+
+https://github.com/stablemarkets/BayesianTutorials/blob/master/SimpleLinearReg/BayesModel.R
+
+https://www.r-bloggers.com/bayesian-simple-linear-regression-with-gibbs-sampling-in-r/
+
+# HMC
+
+Hamiltonian Monte Carlo (HMC) uses a physics analogy, treating the log probability of the posterior as a surface, to improve upon the basic Metropolis sampler and even the Gibbs sampler in certain circumstances. The key thing HMC needs is to be able to calculate the *gradient* at a given point. 
+
+Look at different versions of HMC on the interactive demo page, including at least one version of NUTS: 
+
+https://chi-feng.github.io/mcmc-demo/app.html
+
+Compare how HMC and random walk MH sample for the standard (multivariate normal) distribution, and for one of the weirder distributions, like the banana or the donut. What do you notice?  
+
+You might want to read this blog post by Richard McElreath, which makes the case for HMC over Gibbs sampling: http://elevanth.org/blog/2017/11/28/build-a-better-markov-chain/
+
+Stan uses a version of a variant of HMC called NUTS:
+
+https://mc-stan.org/docs/2_19/reference-manual/hmc-chapter.html 
+
+https://arxiv.org/abs/1701.02434
+
+# MCMC diagnostics
+
+What do we want our Markov chains to do? How can we assess if they did it, or check for problems?
+
+Let's fit a simple Stan model with two parameters. 
+
+```{r message=FALSE} 
+library(rstan)
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = TRUE)
+
+set.seed(20190502)
+true_mu <- 6
+true_sigma <- 3
+sample_size <- 100
+sims <- rnorm(sample_size, true_mu, true_sigma)
+fit <- stan("stan/normal.stan", data = list(y = sims, N = sample_size))
+```
+
+## Representativeness
+
+We want our chains to fully "explore" the posterior, spending most of their time in the highest-probability areas. We don't want them to be too influenced by where they started, or to get stuck somewhere different. 
+
+We're looking for chains that *overlap* and that look *stationary*, after they warm up. 
+
+We can visualize this using **trace plots**: 
+
+```{r}
+stan_trace(fit)
+```
+
+One metric that can flag situations where convergence has failed to occur is the the **Gelman-Rubin diagnostic ("r-hat")**: 
+
+```{r}
+stan_rhat(fit)
+```
+
+R-hat should be close to 1. If it's too far above 1, you should worry. 
+
+(How far is too far? People used to say 1.1, now they say 1.01.)
+
+## Accuracy and stability
+
+The **effective sample size (ESS)** takes into account autocorrelation between our samples, to tell us how much independent information they're giving us about each parameter.  
+
+```{r}
+stan_ess(fit)
+```
+
+The Monte Carlo standard error (MCSE) uses the ESS and the standard deviation of the samples to tell us how stably we're estimating the posterior mean of each parameter. (So smaller MCSE is better.)
+
+```{r}
+stan_mcse(fit)
+```
+
+If those diagnostics turned out okay, we can probably start to trust our estimates! So now it's safe to look at them. Now that we've looked at some of those diagnostics individually, the printed output of a Stan model should make a bit more sense: 
+
+```{r}
+fit
+```
+
+We can plot coefficient point estimates, intervals, and densities: 
+
+```{r}
+stan_plot(fit)
+stan_dens(fit)
+```
+
+Parameters can be correlated, so it's also worth plotting them in pairs: 
+
+```{r}
+# the quick way
+pairs(fit, pars = c("mu", "sigma"))
+
+# the pretty way
+# permuted = TRUE messes things up, so set it to FALSE
+draws <- rstan::extract(fit, pars = c("mu", "sigma"), permuted = FALSE)
+bayesplot::mcmc_pairs(draws)
+```
+
+## Efficiency
+
+Finally, we want MCMC to sample efficiently. If sampling is too slow, there are some things we might try to speed it up: 
+
+- Parallel chains
+- Tinkering with parameters of the sampler, like adaptation parameters or step size
+- Changing the parameterization of the model
+
+```{r}
+sessionInfo()
+```
