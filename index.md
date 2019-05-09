@@ -30,3 +30,8 @@ To work through the labs, you should download the lab materials from Canvas or f
 ## Lab 4: MCMC
 
 - [Lab page](./04-mcmc/04-mcmc.html)
+
+## Lab 5: Regression 
+
+- [Lab page](./05-regression/05-regression.html)
+

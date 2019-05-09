@@ -1,0 +1,231 @@
+---
+title: "Bayesian regression through MCMC"
+subtitle: "Lab 5, CSSS 564"
+author: "Connor Gilroy"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    fig_width: 5
+    fig_height: 3
+---
+
+# Goals
+
+- Understand how to incorporate covariates into a Bayesian model
+- Fit that model to a data set and explore the output
+- Simulate from the posterior distribution to explore model fit
+
+Relevant readings: 
+
+- Kruschke Chapter 17 (simple linear regression)
+- Kruschke Chapter 18 (multiple linear regression)
+
+# Extending the normal model
+
+We'd like to extend a normal model of data to incorporate a single covariate. 
+
+This is the model we're starting with: 
+
+```{stan eval=FALSE, output.var="m_normal"}
+data {
+  int N;
+  vector[N] y;
+}
+parameters {
+  real mu;
+  real<lower=0> sigma;
+}
+model {
+  mu ~ normal(0, 10);
+  sigma ~ exponential(1);
+  y ~ normal(mu, sigma);
+}
+```
+
+We'll need a couple things: 
+
+- a vector of `x` values
+- parameters for the intercept (`alpha`) and slope (`beta`)
+- the linear equation relating those to different values of `mu`
+- priors for our new parameters instead of for `mu` (we'll use "weakly informative" priors)
+
+Open `stan/normal.stan` and we'll make the appropriate changes.
+
+# Data: centering and scaling
+
+We'll use data from the `pscl` package, which is a collection of statistical tools and data sets for political science. 
+
+```{r eval=FALSE}
+install.packages("pscl")
+```
+
+First, load the data into R. We'll tweak the format a little to be in line with contemporary best practices.
+
+```{r message=FALSE}
+library(tidyverse)
+library(pscl)
+
+# data
+df <- 
+  as_tibble(unionDensity) %>%
+  rownames_to_column(var = "country")
+```
+
+Second, center the data (to have a mean of 0) and scale it (to have a standard deviation of 1) using the `scale()` function. 
+
+Note that `scale()` returns a matrix, which we don't want in this case! The `[, 1]` bit turns it into a vector (`as.vector(union)` would do the job as well). 
+
+```{r}
+# scale data 
+df_scaled <- 
+  df %>%
+  mutate(
+    union = scale(union)[, 1],
+    left = scale(left)[, 1]
+  )
+
+summary(df_scaled)
+```
+
+Then, we format the data for Stan: 
+
+```{r}
+d <- list(
+  N = length(df_scaled$union), 
+  y = df_scaled$union, 
+  x = df_scaled$left
+)
+```
+
+
+# Fitting the model
+
+```{r stan_setup, message=FALSE}
+library(rstan)
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = TRUE)
+```
+
+```{r}
+# fit model
+
+# print model fit
+
+```
+
+Quick comparison to OLS/MLE: 
+
+```{r}
+fit_ols <- lm(union ~ left, data = df_scaled)
+summary(fit_ols)
+```
+
+## Diagnostics
+
+```{r}
+# trace plots
+
+```
+
+Also look at and interpret `Rhat`, ESS (`n_eff`), and MCSE (`se_mean`) in the model output above. You can plot these too, but that's more useful when there are more parameters.
+
+## Coefficients
+
+Look at the coefficient output above and plot the coefficients below.
+
+```{r}
+# coefficient plots
+
+# pairs plot
+
+```
+
+# Posterior predictive distribution
+
+We don't just care about coefficients---we want to assess how well our model fits our data. To do this, we can see what values of y would be generated using the posterior distribution of the parameters. In other words, these simulated y values take into account and carry forward the uncertainty in our parameter estimates.
+
+You could do this in R using the posterior draws from all the coefficients... but we're already stepping through our data and sampling parameter values, so why not generate some y values along the way?
+
+So, the most efficient way to generate posterior predictive values is from inside Stan, using a new code block called `generated quantities`: 
+
+```{stan eval=FALSE, output.var="y_rep"}
+generated quantities {
+  // simulate data from the posterior
+  vector[N] y_rep;
+  for (i in 1:N) {
+    y_rep[i] = normal_rng(mu[i], sigma);
+  }
+}
+```
+
+Add this block to `stan/normal.stan`. When we're interested in calculating model fit statistics, we'll use this same block to calculate log-likelihood values.
+
+```{r}
+# recompile and refit the model
+
+```
+
+## Posterior predictive checks
+
+One of the features of the `bayesplot` package is a family of functions for visual posterior predictive checks, `ppc_*`. These let you plot some feature or statistic of the simulated y values against the actual data.
+
+In some cases, we'll be able to use all the simulated values to calculate a summary statistic. In other cases, we'll want to plot only a subset of the `y_rep` values.
+
+```{r message=FALSE}
+library(bayesplot)
+
+# extract y_rep draws from the stanfit object
+
+# plot posterior predictive density overlay
+
+```
+
+You can read more about posterior predictive checks in `bayesplot` here: 
+
+http://mc-stan.org/bayesplot/articles/graphical-ppcs.html
+
+# On your own: multiple covariates
+
+How would you extend the regression model to handle multiple covariates?
+
+You could do it one-by-one: `vector[N] x1;`, `vector[N] x2;`... but that's not very flexible. Instead, we'll use a **design matrix**: 
+
+```{r}
+# scale the rest of the data  
+df_scaled <- 
+  df_scaled %>%
+  mutate(size = scale(size)[, 1], 
+         concen = scale(concen)[, 1])
+
+# it's a convention to use an upper-case X for a matrix of xs
+X <- 
+  df_scaled %>%
+  select(left, size, concen) %>%
+  as.matrix()
+
+# alternatively (and this is better when you want to create dummy variables!)
+# you'll want to drop the intercept using `[, -1]`
+X <- model.matrix(union ~ left + size + concen, data = df_scaled)[, -1]
+
+```
+
+You'll need to update the Stan model with these things:  
+
+- K for the number of covariates
+- an N x K `matrix` of `X` values
+- a K length `vector` of `beta` parameters to estimate
+
+As long as the x values are on the same scale, you can use the same prior for each `beta`.
+
+Give it a try yourself, and see if you can fit the Stan model using more than one covariate!
+
+```{r}
+# fit model
+
+```
+
+You can read about matrices in Stan here: 
+https://mc-stan.org/docs/2_19/reference-manual/vector-and-matrix-data-types.html
+
+After you've tinkered with the model a bit, you can find an example here: https://mc-stan.org/docs/2_19/stan-users-guide/linear-regression.html
