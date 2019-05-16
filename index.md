@@ -35,3 +35,12 @@ To work through the labs, you should download the lab materials from Canvas or f
 
 - [Lab page](./05-regression/05-regression.html)
 
+## Lab 6: Multilevel models
+
+- [Lab page](./06-multilevel/06-multilevel.html)
+
+## Lab 7: GLMs and model comparison
+
+## Lab 8: Shrinkage and regularized regression
+
+## Lab 9: TBD
