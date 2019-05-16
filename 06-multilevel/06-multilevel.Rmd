@@ -1,0 +1,287 @@
+---
+title: "Multilevel models and more on computation"
+subtitle: "Lab 6, CSSS 564"
+author: "Connor Gilroy"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    fig_width: 5
+    fig_height: 3
+---
+
+# Goal
+
+- Understand the concept and uses of multilevel models
+- Fit multilevel models in Stan and understand the syntax
+- Address computational challenges of MCMC by adjusting the models
+
+# Relevant readings
+
+Why use multilevel models?
+
+http://elevanth.org/blog/2017/08/24/multilevel-regression-as-default/
+
+What's the algebra?
+
+http://elevanth.org/blog/2017/09/07/metamorphosis-multilevel-model/
+
+What diagnostics are there for making sure your model fit alright?
+
+http://mc-stan.org/bayesplot/articles/visual-mcmc-diagnostics.html
+
+See also: 
+
+- Kruschke, Chapter 9 (he calls these "hierarchical models")
+- McElreath, Chapter 12 (pdf here: http://xcelab.net/rmpubs/rethinking/Statistical_Rethinking_sample.pdf)
+
+# Introduction
+
+Multilevel models are about the *partial pooling* of information. They're useful whenever data are organized into clusters or groups. For instance:
+
+- multiple observations per individual (in medicine, psychology, sports, panel data...)
+- classrooms, schools, districts in education data
+- geographic regions
+- related demographic categories, especially in political or opinion polling---multilevel regression and poststratification (MRP or "Mister P") is quite common
+- studies or polls in meta-analyses
+
+# Setup
+
+```{r message=FALSE, warning=FALSE}
+library("rstan")
+library("tidyverse")
+library("bayesplot")
+
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = TRUE)
+theme_set(theme_minimal())
+knitr::opts_chunk$set(fig.align = "center")
+```
+
+# Model 1: Binary outcome, no covariates
+
+We start with a simple binary outcome model with a link function: 
+
+$$y_i \sim \text{Bernoulli}(p_i)$$
+$$p_i = \text{logit}^{-1}(\alpha_{unit[i]})$$
+
+What makes it multilevel is that those $\alpha$ values come from a distribution: 
+
+$$\alpha_j \sim \text{Normal}(a, \tau)$$
+
+We can put some fairly generic weakly informative priors on the parameters of that distribution: 
+
+$$a \sim \text{Normal}(0, 10)$$
+$$\tau \sim \text{Cauchy}^+(0, 1)$$
+
+## The data: contraception in Bangladesh
+
+This model uses data from Richard McElreath's `rethinking` package, and implements the model from the second blog post above. Install the package if you need to.
+
+```{r}
+# devtools::install_github("rmcelreath/rethinking")
+data("bangladesh", package = "rethinking")
+
+# subset the data
+set.seed(123)
+bangladesh <- 
+  as_tibble(bangladesh) %>% 
+  sample_n(100)
+
+# look at the data
+glimpse(bangladesh)
+```
+
+The data are on women's contraceptive use in Bangladesh. The outcome `use.contraception` is binary, and each woman lives in a `district`. We won't use the other variables.
+
+We're subsetting the data because the computational problem isn't so obvious with the full data.
+
+We created a problem when we sampled, though! Since we sampled, we no longer know if our districts are represented by integers from 1 to J.
+
+```{r}
+unique(bangladesh$district)
+```
+
+How can we fix that? One way is by playing with data types: 
+
+```{r}
+unique(as.integer(as.factor(bangladesh$district)))
+```
+
+With that in mind, let's format the data for Stan:
+
+```{r}
+d <- list(
+  y = bangladesh$use.contraception,
+  district = as.integer(as.factor(bangladesh$district))
+)
+
+# Indices
+d$N <- length(d$y)
+d$J <- length(unique(d$district))
+```
+
+
+## Multilevel model syntax
+
+Let's have a closer look at what's going on with all those indices: 
+
+```{stan eval=FALSE, output.var=""}
+data {
+  ...
+  // number of districts
+  int<lower = 1> J;
+  // district index
+  int<lower = 1, upper = J> district[N];
+  ...
+}
+...
+transformed parameters {
+  vector<lower = 0, upper = 1>[N] p;
+  for (i in 1:N) {
+    p[i] = inv_logit(alpha[district[i]]);
+  }
+}
+...
+```
+
+Note: this *isn't* the most efficient way to fit a logit model in Stan! There's a shortcut function `bernoulli_logit`: 
+
+```{stan eval=FALSE, output.var=""}
+model {
+  ...
+  // likelihood
+  for (i in 1:N) {
+    y[i] ~ bernoulli_logit(alpha[district[i]]);
+  }
+}
+```
+
+## The centered version of the model
+
+```{r message=FALSE}
+fit_cp <- stan("stan/multilevel_logit_cp.stan", data = d, chains = 2)
+```
+
+```{r}
+print(fit_cp, pars = "tau")
+```
+
+```{r}
+mcmc_trace(as.array(fit_cp), pars = "tau")
+```
+
+## The noncentered version
+
+Rewrite the link part like this: 
+
+$$\text{logit}(p_i) = a + \tau * z_{unit[i]}$$
+
+Then the distribution for the random effects becomes this:
+
+$$z_j \sim \text{Normal}(0, 1)$$
+
+This can be easier to sample from using HMC. In Stan, we'd change the model to this: 
+
+```{stan eval=FALSE, output.var=""}
+...
+parameters {
+  vector[J] z;
+  real a;
+  real<lower = 0> tau;
+}
+transformed parameters {
+  vector<lower = 0, upper = 1>[N] p;
+  for (i in 1:N) {
+    p[i] = inv_logit(a + tau * z[district[i]]);
+  }
+}
+model {
+  // priors
+  z ~ normal(0, 1);
+  ...
+}
+```
+
+```{r message=FALSE}
+fit_ncp <- stan("stan/multilevel_logit_ncp.stan", data = d, chains = 2)
+```
+
+```{r}
+print(fit_ncp, pars = "tau")
+```
+
+```{r}
+mcmc_trace(as.array(fit_ncp), pars = "tau")
+```
+
+# Model 2: Continuous outcome, with covariates
+
+## Data
+
+`nlschools` is a data set of test scores of 8th-grade pupils from different schools in the Netherlands. (`?MASS::nlschools` for more information)
+
+```{r}
+data("nlschools", package = "MASS")
+
+# sample a subset
+set.seed(123)
+nlschools <- 
+  as_tibble(nlschools) %>% 
+  sample_n(200)
+
+# look at the data
+glimpse(nlschools)
+```
+
+We'll model language test scores `lang` as a function of class size `GS` and family socio-economic status `SES`.
+
+```{r}
+# format the data into a list for Stan
+d_nls <- list()
+
+# vector of scaled outcome
+d_nls$y <- as.vector(scale(nlschools$lang))
+
+# matrix of scaled covariates
+d_nls$X <- 
+  nlschools %>%
+  select(GS, SES) %>%
+  scale() %>%
+  as.matrix()
+
+# numeric index from 1..J for the groups
+d_nls$group <- as.integer(as.factor(as.integer(nlschools$class)))
+```
+
+All the indices! 
+
+```{r}
+d_nls$N <- length(d_nls$y)
+d_nls$K <- ncol(d_nls$X)
+d_nls$J <- length(unique(d_nls$group))
+```
+
+## Fit the model
+
+Have a look at `multilevel_regression_cp.stan` and `multilevel_regression_ncp.stan` in the `stan` folder.
+
+First, fit the centered version: 
+
+```{r message=FALSE}
+# fit the centered version of the regression
+```
+
+```{r}
+# check model summaries and trace plots for model coefficients 
+```
+
+Then, fit the noncentered version:
+
+```{r message=FALSE}
+# fit the noncentered version of the regression
+```
+
+```{r}
+# check model summaries and trace plots for model coefficients 
+```
