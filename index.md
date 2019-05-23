@@ -41,6 +41,8 @@ To work through the labs, you should download the lab materials from Canvas or f
 
 ## Lab 7: GLMs and model comparison
 
+- [Lab page](./07-glms/07-glms.html)
+
 ## Lab 8: Shrinkage and regularized regression
 
 ## Lab 9: TBD
