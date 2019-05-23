@@ -1,0 +1,319 @@
+---
+title: "GLMs and model comparison"
+subtitle: "Lab 7, CSSS 564"
+author: "Connor Gilroy"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    fig_width: 5
+    fig_height: 3
+---
+
+# Goals
+
+- Understand how to write and fit generalized linear models for count data 
+- Compare two models graphically against different aspects of the original data
+- Introduce measures of model fit for model comparison
+
+# References
+
+This lab is adapted from two Stan-related vignettes: 
+
+- Graphical PPCs: http://mc-stan.org/bayesplot/articles/graphical-ppcs.html
+- Introduction to `loo`: https://mc-stan.org/loo/articles/loo2-example.html
+
+See also Kruschke Ch 15 (overview of GLMs) and Ch 24 (count outcomes)
+
+Kruschke doesn't have much on information criteria, but Ch 6 of McElreath is a good introduction. His lecture 8 on model comparison here is also good: https://github.com/rmcelreath/statrethinking_winter2019
+
+# Setup
+
+We'll use all of the packages from last week, plus a new one: `loo`. 
+
+```{r message=FALSE, warning=FALSE}
+library("rstan")
+library("tidyverse")
+library("bayesplot")
+library("loo")
+
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = TRUE)
+theme_set(theme_minimal())
+knitr::opts_chunk$set(fig.align = "center")
+
+set.seed(123)
+```
+
+# Data
+
+The data set we'll use is a particularly charming one on pest treatment for roaches in urban aparments, from Gelman & Hill (2007). 
+
+```{r}
+# the data are also in the data/ folder if you can't load from the package
+data("roaches", package = "rstanarm")
+roaches <- as_tibble(roaches)
+glimpse(roaches)
+```
+
+Set up the data for Stan. A couple things to note: 
+
+- In one vignette, they choose to scale the pretreatment roaches `roach1` by dividing by 100. I've followed that approach so our coefficients match.
+- `treatment` and `senior` are binary indicators, so we don't have to scale them. (There's debate on this, though!)
+- `offset` is the log of the amount of time each trap was laid out for. It's like a variable with a fixed coefficent of 1. 
+
+Here's the math for that: 
+  
+    log(mu/exposure) = a + xb
+    log(mu) - log(exposure) = a + xb
+    log(mu) = a + xb + log(exposure)
+    mu = exp(a + xb + log(exposure))
+
+```{r}
+covariates <- 
+  roaches %>%
+  mutate(roach1 = roach1/100) %>% 
+  # mutate(roach1 = scale(roach1)[, 1]) %>% # this is an option too!
+  dplyr::select(roach1, treatment, senior) 
+
+d <- list(
+  y = roaches$y,
+  X = as.matrix(covariates),
+  offset = log(roaches$exposure2)
+)
+
+d$N <- length(d$y)
+d$K <- ncol(d$X)
+```
+
+# Models
+
+GLMs use link functions to connect non-continuous outcomes to linear predictors. We saw one last week, a hierarchical logit model for binary outcomes. This week, we'll consider (unbounded) count outcomes: 0, 1, 2, 3 ... 
+
+## Poisson
+
+Here's a Poisson model for count data: 
+
+    y ~ Poisson(lambda)  // likelihood
+    lambda = exp(a + xb + log(exposure))  // link
+    b ~ Normal(0, 2.5)  // priors
+    a ~ Normal(0, 10)
+    
+Let's look at the Stan implementation of this model, fit it, and examine the results.     
+
+```{r message=FALSE, warning=FALSE}
+fit_poisson <- stan("stan/poisson.stan", data = d)
+```
+
+```{r}
+print(fit_poisson, pars = c("a", "b", "lp__"))
+```
+
+## Negative binomial
+
+The variance of a Poisson model is equal to its mean, `lambda`. The negative binomial model lets us relax this assumption and allow for *overdispersion*. 
+
+There are two main ways of parameterizing the negative binomial. 
+
+First, with two shape parameters: 
+    
+    y ~ NegBinomial(alpha, beta)
+    
+Second, with a mean/location and an overdispersion parameter:
+    
+    y ~ NegBinomial(mu, phi)
+    
+In this case, `Var(y) = mu + mu^2/phi`.
+    
+The second parameterization (`neg_binomial_2` in Stan) is more useful because it's more clearly linked to the Poisson distribution, and we can link the location parameter to covariates.
+
+**What prior should we put on phi?** As phi -> infinity, the negative binomial model approaches the Poisson. How can we encourage the model to "shrink" toward the Poisson model? By putting a prior on the *reciprocal*. This puts more of the probability mass of the prior toward 0. 
+
+    1/sqrt(phi) ~ Exponential(1)
+
+(Turns out, it's even better to use the square root of the reciprocal.)
+
+More on the prior for the over-dispersion parameter: 
+
+https://github.com/stan-dev/stan/wiki/Prior-Choice-Recommendations#story-when-the-generic-prior-fails-the-case-of-the-negative-binomial
+
+https://statmodeling.stat.columbia.edu/2018/04/03/justify-my-love/ (Note: what Dan Simpson calls phi here is what we're calling 1/phi!)
+
+Now, let's look at the Stan model, fit it, and examine the results. 
+
+```{r message=FALSE, warning=FALSE}
+fit_neg_binomial <- stan("stan/neg_binomial.stan", data = d)
+```
+
+```{r}
+print(fit_neg_binomial, pars = c("a", "b", "phi"))
+```
+
+# Posterior predictive checks 
+
+See this vignette for extracting information from a `stanfit` object: 
+
+http://mc-stan.org/rstan/articles/stanfit_objects.html
+
+## Densities
+
+```{r}
+yrep_pois <- rstan::extract(fit_poisson, pars = "y_rep")$y_rep
+
+# yrep_pois_alt <- as.matrix(fit_poisson, pars = "y_rep")
+# extract() permutes the order of the draws, 
+# so these two matrices aren't in the same order
+
+ppc_dens_overlay(y = d$y, yrep = yrep_pois[1:50, ]) + xlim(0, 100)
+# changing xlim to ignore the long tail
+```
+
+```{r}
+yrep_nb <- rstan::extract(fit_neg_binomial, pars = "y_rep")$y_rep
+
+ppc_dens_overlay(y = d$y, yrep = yrep_nb[1:50, ]) + xlim(0, 100)
+# changing xlim to ignore the VERY long tail
+```
+
+## Stats
+
+`ppc_stat` and `ppc_stat_2d` calculate statistics on the samples and compare them to the actual data.
+
+```{r}
+ppc_stat(d$y, yrep_pois, stat = "mean")
+ppc_stat(d$y, yrep_nb, stat = "mean")
+```
+
+Other statistics to try out: 
+
+- standard deviation or variance
+- proportion of zeros
+- max
+
+```{r}
+# try some out here!
+
+```
+
+# Model comparison
+
+We'll introduce two formal ways of comparing models. The basic idea is that while more complex models capture more information about the data and avoid *underfitting*, we want to penalize model complexity to avoid *overfitting*. To do the latter, we come up with some way of approximating *out-of-sample* fit on the data we have. 
+
+Like with the PPCs, model comparison involves adding something to the `generated quantities` block. Here's what we need:
+
+```{stan eval=FALSE, output.var=""}
+generated quantities {
+  // log-likelihood posterior
+  vector[N] log_lik;
+  for (i in 1:N) {
+    log_lik[i] = poisson_lpmf(y[i] | lambda[i]);
+  }
+}
+```
+
+(in the Stan file, we use the same for-loop for both the random y-rep values and the log-likelihood values)
+
+`lpmf` stands for log probability mass function. It calculates the pointwise log-likelihood---for each data point, for each MCMC draw. 
+
+If it's a continuous distribution, like the normal distribution, the suffix is `lpdf` (log probability *density* function) instead. 
+
+https://mc-stan.org/loo/articles/loo2-with-rstan.html
+
+(`rng`, by the way, stands for random number generator.)
+
+We'll start our comparisons by pulling out the pointwise log likelihoods from each model. `loo` has a convenience function for this, but it's basically the same as `rstan::extract`. 
+
+```{r}
+ll_poisson <- extract_log_lik(fit_poisson, merge_chains = FALSE)
+ll_neg_binomial <- extract_log_lik(fit_neg_binomial, merge_chains = FALSE)
+```
+
+## Information criteria: WAIC
+
+You might be familiar with information criteria like AIC and BIC. There's also DIC, which is like AIC but incorporates priors. Most of these are approximations of the out-of-sample *deviance* that penalize the number of parameters (~ model complexity) somehow. (Deviance is -2 * the log likelihood. It's a sum, not an average.)
+
+The most useful IC for us is called **WAIC** (which stands for widely-applicable information criterion or Watanabe-Akaike information criterion). It has two components: 
+
+- the log pointwise predictive density, lppd. This is sum(log(Pr(y_i))).
+- the effective number of parameters, p_waic. This is less intuitive---it's the sum of the variances of the log likelihood for each observation y_i.
+
+WAIC is -2 * (lppd - p_waic). 
+
+```{r}
+waic_poisson <- waic(ll_poisson)
+waic_poisson
+```
+
+```{r}
+waic_neg_binomial <- waic(ll_neg_binomial)
+waic_neg_binomial
+```
+
+There's a function for comparing model fits, which also computes the standard error of the difference. 
+
+```{r}
+loo_compare(waic_poisson, waic_neg_binomial)
+# want the models to have names when you print them out? use a named list()
+```
+
+The comparison indicates that model 2 (the negative binomial model) is better. 
+
+You can compare as many models this way as you'd like, so long as they're predicting the same data.
+
+## LOO-CV
+
+A second approach---and a better one, if you can get it to work---is cross-validation. For many kinds of data, leave-one-out cross-validation is the ideal. 
+
+Actually refitting a model N times, leaving out one observation each time, would be ... very inefficient. Instead, there's a method called **PSIS**, Pareto smoothed importance sampling, which can be used to estimate what you'd get from LOO-CV. PSIS-LOO is what the `loo` package uses. 
+
+Since this is an estimate, we need to look at diagnostics for the Pareto parameters, called `k`, to see if we think it worked.
+
+`loo` has methods for `stanfit` objects or for log-likelihoods extracted from those objects. 
+
+```{r}
+loo_poisson <- loo(fit_poisson)
+
+# the numbers are almost identical using the log-likelihood method
+# using r_eff to account for the fact that these are MCMC draws
+# keeps the diagnostics from being overconfident
+# loo_poisson <- loo(ll_poisson, r_eff = relative_eff(ll_poisson))
+
+loo_poisson
+```
+
+```{r}
+plot(loo_poisson)
+```
+
+```{r}
+loo_neg_binomial <- loo(fit_neg_binomial)
+loo_neg_binomial
+```
+
+```{r}
+plot(loo_neg_binomial)
+```
+
+What to do with those diagnostics? One possibility is to refit the model for each observation with a high k-value (above some threshold, e.g. k > 0.7) and calculate the elpd for those observations directly---rather than trying to estimate it. `rstanarm` can actually do this semi-automatically! 
+
+Another option is to fall back to k-fold cross-validation: divide the data into e.g. 5 or 10 "folds" and perform cross-validation on each. `loo` has some helper functions for this.
+
+Finally, we can compare the `elpd_loo` values as follows: 
+
+```{r}
+loo_compare(loo_poisson, loo_neg_binomial)
+```
+
+Again, the comparison indicates that the negative binomial model is better. The fact that so many k-values are bad for the Poisson model is a strong signal that the model is poorly specific.
+
+Note: `loo` also has a method for model stacking or averaging. This strikes me as experimental now, but it could become important and widespread in the future.
+
+# Appendix: what would JAGS do?
+
+For model comparisons, it seems like DIC is the most common criterion in JAGS. 
+
+Another approach JAGS takes is to nest all the models you want to compare into the same JAGS model, and use a categorical parameter to index them (M = 1 for model 1, M = 2 for model 2, etc). By estimating that categorical parameter, you get the relative probabilities for each model. Stan can't do this, because HMC can't handle latent discrete parameters.
+
+```{r}
+sessionInfo()
+```
