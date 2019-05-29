@@ -1,0 +1,275 @@
+---
+title: "Shrinkage and regularized regression"
+subtitle: "Lab 8, CSSS 564"
+author: "Connor Gilroy"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    fig_width: 5
+    fig_height: 3
+---
+
+# Goals
+
+- Understand shrinkage/regularization of coefficients as an alternative/complement to variable selection
+- Use three specific approaches to regularization---ridge, lasso, hierarchical shrinkage---which regularize through different priors, with different consequences for sparsity
+- Recognize connections between Bayesian regularized regression and regularized regression in a machine learning / penalized MLE framework
+
+# References
+
+- James et al, Introduction to Statistical Learning, Ch 6
+- Hastie et al, Elements of Statistical Learning, Ch 3 
+- Murphy, Machine Learning 
+  - Ch 7.5 (Ridge regression)
+  - Ch 13 (Sparse linear models)
+
+Experiments in sparsity through different priors: 
+
+https://betanalpha.github.io/assets/case_studies/bayes_sparse_regression.html
+
+# Introduction
+
+What do you do when you have a bunch of potential predictor variables or covariates? Do you experiment with different combinations, or throw them all into the same model?
+
+If you do the latter, but impose some skepticism (i.e. regularization), you can wind up with better predictive models. One way of thinking about this is that you're deliberately adding *bias* in order to reduce *variance*. Regularization helps avoid overfitting to your data, even as you include many variables.
+
+You can think about regularized models from a penalized MLE approach or a Bayesian approach. The first perspective is common in machine learning. Instead of picking the coefficient values that minimize the residual sum of squares (RSS), you add a penalty for large coefficients: 
+
+```
+argmin (RSS + penalty parameter * summary of coefficients)
+```
+
+From a Bayesian perspective, this turns out to be the same as putting a prior that encourages coefficients to shrink toward zero: 
+
+```
+beta_k ~ Distribution(0, scale)
+```
+
+Because Bayesians care about posterior *distributions*, models that are mathematically the same don't always have the same consequences (see the lasso section below). Remember that MLE values correspond to posterior modes, aka MAP estimates.
+
+# Setup
+
+Throughout, we'll compare the Bayesian approach to regularization to a machine learning approach from the `glmnet` package. Install that package.
+
+```{r message=FALSE, warning=FALSE}
+library("rstan")
+library("glmnet")
+library("tidyverse")
+
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = TRUE)
+theme_set(theme_minimal())
+knitr::opts_chunk$set(fig.align = "center")
+
+set.seed(123)
+```
+
+# Data
+
+We'll use data on prostate cancer with several clinical measures. This is a conventional example, but in practice these approaches are useful for even more variables---tens, or even hundreds.
+
+These data are available in the `lasso2` package and in the `data/` folder.
+
+```{r}
+data("Prostate", package = "lasso2")
+Prostate <- as_tibble(Prostate)
+
+# write the model as a formula
+# the "-1" gets rid of the intercept
+f <- lpsa ~ lcavol + lweight + age + lbph + svi + lcp + gleason + pgg45 - 1
+
+# format for Stan
+prostate_data <- list(
+  y = Prostate$lpsa,
+  X = model.matrix(f, data = Prostate)
+)
+
+# indices and scaling
+prostate_data$N <- nrow(prostate_data$X)
+prostate_data$K <- ncol(prostate_data$X)
+prostate_data$X <- scale(prostate_data$X)
+```
+
+Notice that we're not scaling `y`. Look at the models in the `stan/` folder, and see if you can figure out why we don't need to, and what the models are doing instead.
+
+# Ridge regression
+
+In penalized maximum likelihood, "ridge regression" means using a penalty related to the squares of the coefficients:
+
+$$\text{argmin}[ RSS + \lambda \sum \beta_k^2 ]$$
+
+In ML, $\sqrt{\sum \beta_k^2}$ is often called the *l2-norm*. 
+
+In Bayesian ridge regression, the equivalent is putting a normal prior on the coefficients: 
+
+$$\beta_k \sim \text{Normal}(0, \tau)$$
+
+The global scale parameter tau is inversely related to lambda:
+
+$$\tau = \frac{1}{\sqrt{2 \lambda}}$$
+
+`glmnet` uses a series of lambda values, and `cv.glmnet` tries to pick the best lambda using cross-validation.
+
+```{r}
+fit_ridge_glmnet <- cv.glmnet(x = prostate_data$X, y = prostate_data$y, 
+                              alpha = 0)
+```
+
+In the first version of the Bayesian model, tau is fixed. This is identical to the Bayesian linear regression we've seen before, with weakly informative priors. 
+
+```{r message=FALSE}
+mod_ridge1 <- stan_model("stan/ridge_regression_1.stan")
+```
+
+Like using a series of lambdas, we can use different fixed values of tau to achieve different levels of shrinkage toward zero.
+
+```{r message=FALSE}
+tau_values <- c(4, 2, 1, .5, .04)
+fit_ridge1_tau1 <- sampling(mod_ridge1, data = c(prostate_data, 
+                                                 tau = tau_values[1]))
+fit_ridge1_tau2 <- sampling(mod_ridge1, data = c(prostate_data, 
+                                                 tau = tau_values[5]))
+```
+
+Compare the coefficients as tau gets smaller: 
+
+```{r}
+print(fit_ridge1_tau1, pars = c("a", "b", "sigma"))
+plot(fit_ridge1_tau1, pars = c("a", "b", "sigma"))
+
+print(fit_ridge1_tau2, pars = c("a", "b", "sigma"))
+plot(fit_ridge1_tau2, pars = c("a", "b", "sigma"))
+```
+
+In the second version, we do something new, using an idea you've seen before. We actually treat tau as a model parameter to estimate, and put a prior on it. For instance (though Student-T priors with higher degrees of freedom are also reasonable):  
+
+$$\tau \sim \text{Cauchy}^{+}(0, 1)$$
+
+Compile and fit the second model: 
+
+```{r message=FALSE}
+mod_ridge2 <- stan_model("stan/ridge_regression_2.stan")
+fit_ridge2 <- sampling(mod_ridge2, data = prostate_data)
+```
+
+Examine the results: 
+
+```{r}
+print(fit_ridge2, pars = c("a", "b", "sigma", "tau"))
+plot(fit_ridge2, pars = c("a", "b", "sigma", "tau"))
+```
+
+# Lasso regression
+
+"Lasso regression" means using a penalty related to the absolute values of the coefficients, the *l1-norm*:
+
+$$\text{argmin}[ RSS + \lambda \sum | \beta_k | ]$$
+
+In the Bayesian lasso, we replace the normal priors on the coefficients with Laplace priors: 
+
+$$\beta_k \sim \text{Laplace}(0, \tau)$$
+
+Here's the `glmnet` version of lasso: 
+
+```{r}
+fit_lasso_glmnet <- cv.glmnet(x = prostate_data$X, y = prostate_data$y, 
+                              alpha = 1)
+```
+
+Again, the first Bayesian model uses a fixed tau: 
+
+```{r message=FALSE}
+mod_lasso1 <- stan_model("stan/lasso_regression_1.stan")
+```
+
+```{r message=FALSE}
+tau_values <- c(4, 2, 1, .5, .04)
+fit_lasso1_tau1 <- sampling(mod_lasso1, data = c(prostate_data, 
+                                                 tau = tau_values[1]))
+fit_lasso1_tau2 <- sampling(mod_lasso1, data = c(prostate_data, 
+                                                 tau = tau_values[5]))
+```
+
+```{r}
+print(fit_lasso1_tau1, pars = c("a", "b", "sigma"))
+plot(fit_lasso1_tau1, pars = c("a", "b", "sigma"))
+
+print(fit_lasso1_tau2, pars = c("a", "b", "sigma"))
+plot(fit_lasso1_tau2, pars = c("a", "b", "sigma"))
+```
+
+And once again, a more Bayesian approach to tau is, rather than picking some arbitrary values, to try to estimate it by putting a prior on it. That's what this second model does.
+
+```{r message=FALSE}
+mod_lasso2 <- stan_model("stan/lasso_regression_2.stan")
+fit_lasso2 <- sampling(mod_lasso2, data = prostate_data)
+```
+
+```{r}
+print(fit_lasso2, pars = c("a", "b", "sigma", "tau"))
+plot(fit_lasso2, pars = c("a", "b", "sigma", "tau"))
+```
+
+# Regularization paths
+
+What happens as tau decreases? (Or as lambda, in glmnet terms, increases?) All of the coefficients are shrunk toward 0, but at different rates. 
+
+In machine-learning lasso regression, some coefficients actually go to 0, so the paths look very different for ridge and for lasso. This doesn't happen with the posterior distributions in the Bayesian lasso, as you can confirm from the coefficient plots above.
+
+```{r}
+p_ridge <- glmnet(x = prostate_data$X, y = prostate_data$y, alpha = 0)
+p_lasso <- glmnet(x = prostate_data$X, y = prostate_data$y, alpha = 1)
+plot(p_ridge, xvar = "lambda")
+plot(p_lasso, xvar = "lambda")
+```
+
+# Hierarchical shrinkage
+
+The Bayesian lasso doesn't get us sparsity, but can we get there? What kinds of prior shapes would encourage sparsity? (That is, a few relatively large coefficients, and many coefficients very close to zero.)
+
+We can use different **global-local scale mixtures** of normal distributions as our priors to encourage more sparsity. (You've seen the Student-T distribution is one of these scale mixtures, and the lasso is actually one of them too.)
+
+We combine the global scale for the coefficient priors, tau, with a local scale lambda. (Sorry, there aren't enough Greek letters to go around...) 
+
+$$\beta_{k} \sim \text{Normal}(0, \lambda_k \tau)$$
+
+(Written Stan-style, so $\lambda_k \tau$ is the standard deviation.)
+
+We draw those lambdas from some distribution.
+
+$$\lambda_k \sim \text{Cauchy}^{+}(0, 1)$$
+
+If we use a half-cauchy, this is the "horseshoe" prior, one special case of the hierarchical shrinkage prior (`hs()` in `rstanarm`). 
+
+As usual, we can fix tau or put a prior on it: 
+
+```{r message=FALSE}
+mod_hs1 <- stan_model("stan/hierarchical_shrinkage_1.stan")
+mod_hs2 <- stan_model("stan/hierarchical_shrinkage_2.stan")
+```
+
+You can see that these models are harder to sample from, because they have more divergent transitions: 
+
+```{r message=FALSE}
+fit_hs1 <- sampling(mod_hs1, data = c(prostate_data, tau = tau_values[4]), 
+                    control = list(adapt_delta = .999, 
+                                   max_treedepth = 15))
+```
+
+Increasing adapt_delta makes sampling slower, but even increasing it a great deal doesn't prevent all divergent transitions in this case. http://mc-stan.org/misc/warnings.html#divergent-transitions-after-warmup
+
+```{r}
+plot(fit_hs1, pars = "b")
+plot(fit_hs1, pars = "lambda")
+```
+
+```{r message=FALSE}
+fit_hs2 <- sampling(mod_hs2, data = prostate_data, 
+                    control = list(adapt_delta = .999, 
+                                   max_treedepth = 15))
+```
+
+```{r}
+plot(fit_hs2, pars = c("lambda", "tau"))
+```
