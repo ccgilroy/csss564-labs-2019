@@ -45,4 +45,6 @@ To work through the labs, you should download the lab materials from Canvas or f
 
 ## Lab 8: Shrinkage and regularized regression
 
+- [Lab page](./08-regularization/08-regularization.html)
+
 ## Lab 9: TBD
