@@ -1,0 +1,315 @@
+---
+title: "Mixture models and model review"
+subtitle: "Lab 9, CSSS 564"
+author: "Connor Gilroy"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    fig_width: 5
+    fig_height: 3
+---
+
+# Goals
+
+- Look at latent Dirichlet allocation, a form of topic modeling, as an example of a mixture model
+- Understand how to fit common Stan models using R syntax with the `rstanarm` package
+- Recognize the advantages and limitations of pre-specified models
+
+# References
+
+Mixture models: 
+
+- The `ordered` data type to avoid label switching: 
+  - https://betanalpha.github.io/assets/case_studies/identifying_mixture_models.html
+  - https://mc-stan.org/docs/2_18/stan-users-guide/label-switching-problematic-section.html
+- Chapters and sections of the Stan users guide:
+  - https://mc-stan.org/docs/2_18/stan-users-guide/mixture-modeling-chapter.html
+  - https://mc-stan.org/docs/2_18/stan-users-guide/clustering-chapter.html
+  - https://mc-stan.org/docs/2_18/stan-users-guide/latent-dirichlet-allocation.html
+  
+Hierarchical mixture model from Kruschke, rewritten in Stan: 
+
+- https://statmodeling.stat.columbia.edu/2016/10/26/hierarchical-mixture-model-stan/
+
+(You can decide if you think this is a "clever programming contrivance")
+  
+Priors in `rstanarm`: 
+
+- http://mc-stan.org/rstanarm/articles/priors.html
+- http://mc-stan.org/rstanarm/reference/priors.html
+
+Specific `rstanarm` models: 
+
+- http://mc-stan.org/rstanarm/articles/glmer.html
+- http://mc-stan.org/rstanarm/articles/count.html
+
+# Setup
+
+The new package this time is `rstanarm`, which fits pre-built Stan models using an R formula-style syntax. 
+
+```{r message=FALSE, warning=FALSE}
+library("rstan")
+library("rstanarm")
+library("tidyverse")
+library("bayesplot")
+
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = TRUE)
+theme_set(theme_minimal())
+knitr::opts_chunk$set(fig.align = "center")
+
+set.seed(123)
+```
+
+# Mixture models
+
+Latent Dirichlet allocation (LDA) is a common form of topic modeling for text data. Words are distributed across topics, and topics are distributed across documents, probabilistically. We can write the LDA model in Stan.
+
+The data we'll use are the words from 100 Associated Press articles. You can see what package they came from and the code that formatted them this way in the appendix.
+
+```{r}
+ap <- read_csv("data/associated_press.csv")
+```
+
+This model has many indices, many parameters, and a complicated likelihood. We'll talk through it!
+
+```{r}
+m_lda <- stan_model("stan/lda.stan")
+m_lda
+```
+
+The words and documents are formatted as long vectors already, but we need to decide the number of topics `K`, calculate the other indices, and set hyperparameters for the two Dirichlet distributions. 
+
+```{r}
+d <- list(
+  doc = ap$document, 
+  w = ap$w
+)
+
+d$K <- 5
+d$V <- length(unique(d$w))
+d$M <- length(unique(d$doc))
+d$N <- length(d$w)
+d$alpha <- rep(1, times = d$K)
+d$beta <- rep(0.5, times = d$V) 
+```
+
+We'll fit the model using *variational inference* (`vb` instead of `sampling`). This is less accurate than MCMC, but faster. This is a tough model to fit! (Dedicated text analysis packages are even faster, but it's still pretty neat we can write the model in Stan.)
+
+```{r}
+fit_lda <- vb(m_lda, data = d, algorithm = "meanfield")
+```
+
+# Review of models
+
+This section reviews models we've learned throughout the quarter and rewrites them using `rstanarm`. The data sets come from previous labs and homework assignments.
+
+## Linear regression
+
+We can fit a linear regression using `stan_glm()` with the `gaussian()` likelihood family, which is the default. 
+
+This is like `glm()`, but with priors that you specify in the arguments. If you leave the priors out, you'll get some sensible default priors---but it's better to be explicit. If you want flat priors (and you probably don't!), you'd have to set that prior `= NULL`.
+
+```{r message=FALSE}
+unionDensity <- read_csv("data/unionDensity.csv")
+
+fit_normal <- stan_glm(union ~ left + size + concen, 
+                       data = unionDensity, 
+                       family = gaussian(),
+                       prior = normal(0, 1),
+                       prior_intercept = normal(0, 10),
+                       prior_aux = exponential(1))
+
+```
+
+We didn't scale the data. Why not? Each prior has an `autoscale` option, which is `TRUE` by default. The prior scales are adjusted automatically based on the data. We can see that with `prior_summary()`:
+
+```{r}
+prior_summary(fit_normal)
+```
+
+And the results of the model: 
+
+```{r}
+summary(fit_normal)
+```
+
+```{r}
+plot(fit_normal)
+```
+
+## Multilevel models
+
+For multilevel models, `stan_glmer()` is like `lme4::glmer()`. 
+
+```{r message=FALSE}
+bangladesh <- read_csv("data/bangladesh.csv")
+
+fit_mlm <- stan_glmer(use.contraception ~ living.children + age.centered + 
+                        urban + (1 | district), 
+                      data = bangladesh, 
+                      family = binomial("logit"),
+                      prior = normal(0, 2.5),
+                      prior_intercept = normal(0, 10), 
+                      prior_covariance = decov(shape = 1,
+                                               scale = 1))
+```
+
+What's a bit different here is `prior_covariance`. We'll talk about priors on covariance and correlation matrices in lecture. In this case, since there's only a varying intercept, this reduces to a prior on the variance. The prior turns out to be a Gamma distribution on the standard deviation, which with `shape = scale = 1` simplifies to `tau ~ exponential(1);`.
+
+```{r}
+prior_summary(fit_mlm)
+```
+
+```{r}
+print(fit_mlm)
+```
+
+## GLMs
+
+With different families for the likelihood, we get GLMs for count data.
+
+```{r message=FALSE}
+roaches <- read_csv("data/roaches.csv")
+
+roaches <- 
+  roaches %>%
+  mutate(roach1 = roach1/100)
+
+fit_poisson <- stan_glm(y ~ roach1 + treatment + senior,
+                        offset = log(exposure2),
+                        data = roaches,
+                        family = poisson(link = "log"), 
+                        prior = normal(0, 2.5), 
+                        prior_intercept = normal(0, 10))
+
+```
+
+
+
+```{r message=FALSE}
+fit_negbinom <- stan_glm(y ~ roach1 + treatment + senior,
+                         offset = log(exposure2),
+                         data = roaches,
+                         family = neg_binomial_2(link = "log"), 
+                         prior = normal(0, 2.5), 
+                         prior_intercept = normal(0, 10), 
+                         prior_aux = exponential(1))
+```
+
+
+## Shrinkage
+
+The global scales for shrinkage below come approximately from the estimates in Lab 8.
+
+The `lasso` prior isn't quite the same as the `laplace` prior---it actually puts a prior on the global scale. 
+
+```{r message=FALSE}
+Prostate <- read_csv("data/Prostate.csv")
+
+f <- lpsa ~ lcavol + lweight + age + lbph + svi + lcp + gleason + pgg45 
+
+fit_ridge <- stan_glm(f, data = Prostate, 
+                      family = gaussian(), 
+                      prior = normal(0, 0.33), 
+                      prior_intercept = normal(0, 10), 
+                      prior_aux = exponential(1))
+
+fit_lasso <- stan_glm(f, data = Prostate, 
+                      family = gaussian(), 
+                      prior = laplace(0, 0.26), 
+                      prior_intercept = normal(0, 10), 
+                      prior_aux = exponential(1))
+
+fit_lasso_v2 <- stan_glm(f, data = Prostate, 
+                         family = gaussian(), 
+                         prior = lasso(df = 1, 0, 2.5), 
+                         prior_intercept = normal(0, 10), 
+                         prior_aux = exponential(1))
+```
+
+You can compare models of the same outcome with `loo`: 
+
+```{r}
+compare_models(loo(fit_ridge), 
+               loo(fit_lasso))
+```
+
+`hs` is not quite the original horseshoe prior we saw before; it's what's called a regularized horseshoe. (As mentioned before, hierarchical shrinkage to induce sparsity is an active area of Bayesian research!)
+
+```{r message=FALSE}
+# `hs` doesn't autoscale, so we scale the data
+Prostate_scaled <- 
+  Prostate %>%
+  mutate_all(function(x) scale(x)[, 1])
+
+# calculate a global scale
+# following Piironen and Vehtari (2017)
+K <- 8  # total number of coefficients
+k0 <- 2  # guess for number of non-zero coefficients
+global_scale <- k0 / (K - k0) / sqrt(nrow(Prostate_scaled))
+
+fit_hs <- stan_glm(f, data = Prostate_scaled,
+                   family = gaussian(),
+                   prior = hs(df = 1,
+                              global_df = 1,
+                              global_scale =  global_scale,
+                              slab_df = 4,
+                              slab_scale = 2.5),
+                   prior_intercept = normal(0, 10),
+                   prior_aux = exponential(1))
+```
+
+## Limitations of `rstanarm`
+
+What *can't* you do in `rstanarm`? Some important and useful models are missing from above. Two major cases we've learned about this quarter: 
+
+**Robust regression:** There's no Student-T likelihood, either with fixed or estimated `nu`. 
+
+**Regularized regression:** except for the lasso, there's not a way to put a prior on the global scale and estimate it.
+
+With `rstanarm`, you're giving up extensibility and flexibility for speed and convenience. There are definitely some cases where you'll want to write models in Stan directly, but `rstanarm` is often a good place to start.
+
+## What else can `rstanarm` do?
+
+Some examples: 
+
+`stan_lm` takes a different approach from `stan_glm`: It does a QR decomposition of X and puts a prior on $R^2$. http://mc-stan.org/rstanarm/articles/lm.html
+
+`stan_polr` exist for ordinal regression, and does interesting things to the priors on the cutpoints. http://mc-stan.org/rstanarm/articles/polr.html
+
+See the articles here for more: http://mc-stan.org/rstanarm/articles/index.html
+
+# Appendix
+
+This is how the text data were generated: 
+
+```{r eval=FALSE}
+library(tidytext)
+library(tidyverse)
+
+data("AssociatedPress", package = "topicmodels")
+
+# https://www.tidytextmining.com/dtm.html#tidy-dtm
+ap_tidy <- tidy(AssociatedPress)
+
+ap_tidy_long <-
+  ap_tidy %>%
+  # only the first 100 documents
+  filter(document %in% 1:100) %>%
+  # https://github.com/tidyverse/tidyr/issues/279
+  mutate(ids = map(count, seq_len)) %>% 
+  unnest()
+
+ap_tidy_long <- 
+  ap_tidy_long %>%
+  mutate(w = as.integer(as_factor(term))) %>%
+  select(-ids, -count)
+
+write_csv(ap_tidy_long, "data/associated_press.csv")
+```
+
+```{r}
+sessionInfo()
+```
