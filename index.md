@@ -47,4 +47,6 @@ To work through the labs, you should download the lab materials from Canvas or f
 
 - [Lab page](./08-regularization/08-regularization.html)
 
-## Lab 9: TBD
+## Lab 9: Mixture models and review
+
+- [Lab page](./09-review-mixtures/09-review-mixtures.html)
